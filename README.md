@@ -1,4 +1,4 @@
-# pettracer
+# pettracer - www.pettracer.com
 
 Minimal Python client for the PetTracer portal.
 

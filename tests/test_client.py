@@ -1,0 +1,325 @@
+import json
+from unittest.mock import Mock
+
+import pytest
+import requests
+
+from pettracer.client import get_ccs_status, get_ccinfo, login, PetTracerError
+from pettracer.types import Device
+
+
+SAMPLE_JSON = [
+    {
+        "id": 14758,
+        "accuWarn": 3810,
+        "safetyZone": False,
+        "hw": 656643,
+        "sw": 656393,
+        "bl": 656386,
+        "bat": 4207,
+        "chg": 0,
+        "userId": 15979,
+        "masterHs": {
+            "id": 10775,
+            "posLat": 51.4000701,
+            "posLong": -1.0842267,
+            "hw": 656384,
+            "sw": 656388,
+            "bl": 656385,
+            "bat": 0,
+            "userId": None,
+            "status": 0,
+            "lastContact": "2025-12-27T21:51:40.310+0000",
+            "devMode": False
+        },
+        "mode": 1,
+        "modeSet": 1,
+        "status": 0,
+        "search": False,
+        "lastTlgNr": -42,
+        "lastContact": "2025-12-27T21:51:40.310+0000",
+        "lastPos": {
+            "id": 110294833,
+            "posLat": 51.4000701,
+            "posLong": -1.0842267,
+            "fixS": 3,
+            "fixP": 2,
+            "horiPrec": 12,
+            "sat": 8,
+            "rssi": 111,
+            "acc": 16,
+            "flags": 32,
+            "timeMeasure": "2025-12-27T09:59:41.000+0000",
+            "timeDb": "2025-12-27T09:59:41.000+0000"
+        },
+        "devMode": False,
+        "details": {
+            "id": 14758,
+            "image": None,
+            "img": "img1570960283064022523",
+            "color": 255,
+            "birth": "2018-07-15T23:00:00.000+0000",
+            "name": "Oreo"
+        },
+        "led": False,
+        "ble": False,
+        "buz": False,
+        "lastRssi": -30,
+        "flags": 2,
+        "searchModeDuration": -1,
+        "masterStatus": "ACTIVE",
+        "home": True,
+        "homeSince": "2025-12-27T19:07:17.721+0000",
+        "owner": True,
+        "fiFo": []
+    }
+]
+
+
+class DummyResponse:
+    def __init__(self, json_data, status_code=200):
+        self._json = json_data
+        self.status_code = status_code
+
+    def json(self):
+        return self._json
+
+    def raise_for_status(self):
+        if not (200 <= self.status_code < 300):
+            raise Exception(f"HTTP {self.status_code}")
+
+
+def test_get_ccs_status_parses_sample(monkeypatch):
+    mock_get = Mock(return_value=DummyResponse(SAMPLE_JSON))
+    monkeypatch.setattr("requests.Session.get", mock_get)
+
+    devices = get_ccs_status()
+    assert isinstance(devices, list)
+    assert len(devices) == 1
+    assert isinstance(devices[0], Device)
+    assert devices[0].id == 14758
+    assert devices[0].details.name == "Oreo"
+
+
+def test_get_ccs_status_parses_fifo_entries(monkeypatch):
+    # construct a sample with a fifo entry and ensure it's parsed into our types
+    fifo_json = {
+        "id": 14758,
+        "fiFo": [
+            {
+                "telegram": {
+                    "id": 1767102243195,
+                    "deviceType": 0,
+                    "deviceId": 14758,
+                    "hsId": 10775,
+                    "telegram": "000039a604071f20541027a40100010a04090a05030a040200002a17029e74",
+                    "latitude": None,
+                    "longitude": None,
+                    "timeDb": "2025-12-30T13:44:03.195+0000",
+                    "timeDev": None,
+                    "cmd": 7,
+                    "charging": False
+                },
+                "receivedBy": [
+                    {"hsId": 10775, "rssi": 158}
+                ]
+            }
+        ]
+    }
+
+    mock_get = Mock(return_value=DummyResponse([fifo_json]))
+    monkeypatch.setattr("requests.Session.get", mock_get)
+
+    devices = get_ccs_status()
+    assert devices[0].fiFo is not None
+    assert len(devices[0].fiFo) == 1
+    entry = devices[0].fiFo[0]
+    assert entry.telegram.id == 1767102243195
+    assert entry.receivedBy[0].hsId == 10775
+    assert entry.receivedBy[0].rssi == 158
+
+
+def test_http_error_raises(monkeypatch):
+    mock_get = Mock(side_effect=Exception("conn error"))
+    monkeypatch.setattr("requests.Session.get", mock_get)
+
+    with pytest.raises(PetTracerError):
+        get_ccs_status()
+
+
+def test_non_list_json_raises(monkeypatch):
+    mock_get = Mock(return_value=DummyResponse({"ok": True}))
+    monkeypatch.setattr("requests.Session.get", mock_get)
+
+    with pytest.raises(PetTracerError):
+        get_ccs_status()
+
+
+def test_get_ccs_status_rejects_login_result(monkeypatch):
+    """If caller passes the result of `login()` as the first argument, raise an error."""
+    # ensure we raise a helpful error rather than silently accepting the wrong type
+    with pytest.raises(PetTracerError) as exc:
+        get_ccs_status({"token": "tok-xyz", "session": requests.Session()})
+    assert "Invalid 'url' parameter" in str(exc.value)
+
+
+def test_get_ccs_status_invalid_first_arg_raises(monkeypatch):
+    # Passing random dicts should raise a helpful PetTracerError
+    with pytest.raises(PetTracerError) as exc:
+        get_ccs_status({'foo': 'bar'})
+    assert "Invalid 'url' parameter" in str(exc.value)
+
+
+def test_get_ccs_status_sets_auth_header(monkeypatch):
+    captured = {}
+
+    def mock_get(self, url, timeout, headers=None):
+        captured['url'] = url
+        captured['headers'] = headers
+        return DummyResponse(SAMPLE_JSON)
+
+    monkeypatch.setattr("requests.Session.get", mock_get)
+
+    devices = get_ccs_status(token="dummy-token")
+    assert devices[0].id == 14758
+    assert captured['headers'] is not None
+    assert captured['headers'].get('Authorization') == "Bearer dummy-token"
+
+
+def test_get_ccinfo_posts_and_parses(monkeypatch):
+    captured = {}
+
+    def mock_post(self, url, json, timeout, headers=None):
+        captured['url'] = url
+        captured['json'] = json
+        captured['headers'] = headers
+        return DummyResponse(SAMPLE_JSON)
+
+    monkeypatch.setattr("requests.Session.post", mock_post)
+
+    # Pass integer device id and expect normalized payload
+    resp = None
+    try:
+        resp = get_ccinfo(14758, token="another-token")
+    except Exception as exc:
+        pytest.fail(f"get_ccinfo raised unexpectedly: {exc}")
+
+    assert captured['url'].endswith('/api/map/getccinfo')
+    assert captured['json'] == {"devId": 14758}
+    assert captured['headers'].get('Authorization') == "Bearer another-token"
+    # ensure we returned typed Device objects
+    assert isinstance(resp, list)
+    assert isinstance(resp[0], Device)
+    assert resp[0].id == 14758
+
+
+def test_get_ccinfo_accepts_id_key(monkeypatch):
+    captured = {}
+
+    def mock_post(self, url, json, timeout, headers=None):
+        captured['url'] = url
+        captured['json'] = json
+        captured['headers'] = headers
+        return DummyResponse(SAMPLE_JSON)
+
+    monkeypatch.setattr("requests.Session.post", mock_post)
+
+    resp = None
+    try:
+        resp = get_ccinfo({"id": 14758}, token="another-token")
+    except Exception as exc:
+        pytest.fail(f"get_ccinfo raised unexpectedly: {exc}")
+
+    assert captured['json'] == {"devId": 14758}
+    assert isinstance(resp, list)
+    assert isinstance(resp[0], Device)
+    assert resp[0].id == 14758
+
+
+def test_get_ccinfo_returns_single_device_when_server_returns_dict(monkeypatch):
+    captured = {}
+
+    def mock_post(self, url, json, timeout, headers=None):
+        captured['url'] = url
+        captured['json'] = json
+        captured['headers'] = headers
+        # return a single device dict (not a list)
+        return DummyResponse(SAMPLE_JSON[0])
+
+    monkeypatch.setattr("requests.Session.post", mock_post)
+
+    try:
+        res = get_ccinfo(14758, token="tkn")
+    except Exception as exc:
+        pytest.fail(f"get_ccinfo raised unexpectedly: {exc}")
+
+    assert isinstance(res, Device)
+    assert res.id == 14758
+    assert captured['json'] == {"devId": 14758}
+
+
+def test_login_json_response_returns_token(monkeypatch):
+    captured = {}
+
+    def mock_post(self, url, json=None, timeout=None, headers=None):
+        captured['url'] = url
+        captured['json'] = json
+        captured['headers'] = headers
+
+        class R:
+            status_code = 200
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"access_token": "tok-123"}
+
+        return R()
+
+    monkeypatch.setattr("requests.Session.post", mock_post)
+
+    res = None
+    try:
+        res = login("user", "pw")
+    except Exception as exc:
+        pytest.fail(f"login raised unexpectedly: {exc}")
+
+    assert res['token'] == "tok-123"
+    assert isinstance(res['session'], requests.Session)
+
+    # expected payload and dynamically computed content-length
+    expected_payload = {"login": "user", "password": "pw"}
+    import json as _json
+    expected_cl = str(len(_json.dumps(expected_payload).encode('utf-8')))
+
+    expected_headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Content-Type": "application/json",
+        "User-Agent": "pettracer-python-client/0.1",
+        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
+        "Content-Length": expected_cl,
+    }
+
+    assert captured['json'] == expected_payload
+    assert captured['headers'] == expected_headers
+    assert captured['url'].endswith('/user/login')
+
+
+def test_login_json_missing_token_raises(monkeypatch):
+    def mock_post(self, url, json=None, timeout=None, headers=None):
+        class R:
+            status_code = 200
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"status": "ok"}  # no token
+
+        return R()
+
+    monkeypatch.setattr("requests.Session.post", mock_post)
+
+    with pytest.raises(PetTracerError):
+        login("user", "pw")

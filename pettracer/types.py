@@ -112,6 +112,48 @@ class Details:
 @dataclass
 class TelegramPacket:
     id: Optional[int]
+
+
+@dataclass
+class UserProfile:
+    id: Optional[int]
+    email: Optional[str]
+    street: Optional[str]
+    street2: Optional[str]
+    zip: Optional[str]
+    city: Optional[str]
+    name: Optional[str]
+    mobile: Optional[str]
+    lang: Optional[str]
+    country_id: Optional[int]
+    title: Optional[str]
+    image_1920: Optional[str]
+    x_studio_newsletter: Optional[bool]
+
+    @classmethod
+    def from_dict(cls, d: Optional[Dict[str, Any]]):
+        if d is None:
+            return None
+        return cls(
+            id=d.get("id"),
+            email=d.get("email"),
+            street=d.get("street"),
+            street2=d.get("street2"),
+            zip=d.get("zip"),
+            city=d.get("city"),
+            name=d.get("name"),
+            mobile=d.get("mobile"),
+            lang=d.get("lang"),
+            country_id=d.get("country_id"),
+            title=d.get("title"),
+            image_1920=d.get("image_1920"),
+            x_studio_newsletter=d.get("x_studio_newsletter"),
+        )
+
+
+@dataclass
+class TelegramPacket:
+    id: Optional[int]
     deviceType: Optional[int]
     deviceId: Optional[int]
     hsId: Optional[int]

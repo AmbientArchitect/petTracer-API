@@ -5,12 +5,14 @@ import os
 import requests
 import json
 
-from .types import Device
+from .types import Device, LastPos
 
 
 DEFAULT_URL = "https://portal.pettracer.com/api/map/getccs"
 DEFAULT_CCINFO_URL = "https://portal.pettracer.com/api/map/getccinfo"
+DEFAULT_CCPOSITIONS_URL = "https://portal.pettracer.com/api/map/getccpositions"
 LOGIN_URL = "https://portal.pettracer.com/api/user/login"
+USER_PROFILE_URL = "https://portal.pettracer.com/api/user/profile"
 
 
 class PetTracerError(Exception):
@@ -192,3 +194,75 @@ def login(username: str, password: str, session: Optional[requests.Session] = No
         os.environ["PETTRACER_TOKEN"] = token
 
     return {"token": token, "session": sess}
+
+
+def get_ccpositions(dev_id: int, filter_time: int, to_time: int, url: str = DEFAULT_CCPOSITIONS_URL, session: Optional[requests.Session] = None, token: Optional[str] = None, timeout: int = 10) -> List[LastPos]:
+    """Fetch device positions for a given time range.
+
+    The `getccpositions` endpoint returns device positions with a time range filter.
+
+    Args:
+        dev_id: Device ID to fetch positions for
+        filter_time: Start time in milliseconds (Unix timestamp * 1000)
+        to_time: End time in milliseconds (Unix timestamp * 1000)
+        url: endpoint URL
+        session: Optional requests.Session to use
+        token: Optional bearer token (or set PETTRACER_TOKEN env var)
+        timeout: Request timeout in seconds
+
+    Returns:
+        List[LastPos]: list of position records
+
+    Raises:
+        PetTracerError: for network, validation, or parsing issues
+    """
+    body = {"devId": dev_id, "filterTime": filter_time, "toTime": to_time}
+    sess = session or requests.Session()
+    headers = _request_headers(token)
+
+    try:
+        resp = sess.post(url, json=body, timeout=timeout, headers=headers)
+        resp.raise_for_status()
+    except Exception as exc:
+        raise PetTracerError(f"HTTP error while calling getccpositions: {exc}") from exc
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise PetTracerError("Invalid JSON response from getccpositions") from exc
+
+    if not isinstance(data, list):
+        raise PetTracerError("Unexpected JSON structure from getccpositions: expected a list")
+
+    positions = []
+    for item in data:
+        try:
+            positions.append(LastPos.from_dict(item))
+        except Exception as exc:
+            raise PetTracerError(f"Failed to parse position item: {exc}") from exc
+
+    return positions
+
+
+def get_user_profile(url: str = USER_PROFILE_URL, session: Optional[requests.Session] = None, token: Optional[str] = None, timeout: int = 10) -> 'UserProfile':
+    """Fetch the account profile for the current token and return a typed UserProfile."""
+    sess = session or requests.Session()
+    headers = _request_headers(token)
+
+    try:
+        resp = sess.get(url, timeout=timeout, headers=headers)
+        resp.raise_for_status()
+    except Exception as exc:
+        raise PetTracerError(f"HTTP error while fetching user profile: {exc}") from exc
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise PetTracerError("Invalid JSON response from user profile") from exc
+
+    # expect a dict
+    if not isinstance(data, dict):
+        raise PetTracerError("Unexpected JSON structure from user profile: expected a dict")
+
+    from .types import UserProfile
+    return UserProfile.from_dict(data)

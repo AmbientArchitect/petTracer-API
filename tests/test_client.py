@@ -4,8 +4,8 @@ from unittest.mock import Mock
 import pytest
 import requests
 
-from pettracer.client import get_ccs_status, get_ccinfo, login, PetTracerError
-from pettracer.types import Device
+from pettracer.client import get_ccs_status, get_ccinfo, get_ccpositions, login, get_user_profile, PetTracerError
+from pettracer.types import Device, LastPos
 
 
 SAMPLE_JSON = [
@@ -323,3 +323,108 @@ def test_login_json_missing_token_raises(monkeypatch):
 
     with pytest.raises(PetTracerError):
         login("user", "pw")
+
+
+def test_get_user_profile_parses(monkeypatch):
+    captured = {}
+
+    profile_json = {
+        "id": 19804,
+        "email": "richard@egilius.net",
+        "street": "Webster House",
+        "street2": "Shortheath Lane",
+        "zip": "RG7 4EQ",
+        "city": "Reading",
+        "name": "Richard Giles",
+        "mobile": "07710900362",
+        "lang": "en_GB",
+        "country_id": 231,
+        "title": None,
+        "image_1920": None,
+        "x_studio_newsletter": False,
+    }
+
+    def mock_get(self, url, timeout, headers=None):
+        captured['url'] = url
+        captured['headers'] = headers
+        return DummyResponse(profile_json)
+
+    monkeypatch.setattr("requests.Session.get", mock_get)
+
+    from pettracer.types import UserProfile
+
+    res = get_user_profile(token="tkn")
+    assert isinstance(res, UserProfile)
+    assert res.id == 19804
+    assert res.email == "richard@egilius.net"
+    assert captured['headers'].get('Authorization') == "Bearer tkn"
+
+
+def test_get_ccpositions_parses_sample(monkeypatch):
+    captured = {}
+
+    positions_json = [
+        {
+            "id": 110670824,
+            "posLat": 51.4000459,
+            "posLong": -1.0838738,
+            "fixS": 3,
+            "fixP": 1,
+            "horiPrec": 12,
+            "sat": 9,
+            "rssi": 103,
+            "acc": 2,
+            "flags": 32,
+            "timeMeasure": "2025-12-31T09:45:47.000+0000",
+            "timeDb": "2025-12-31T09:45:48.000+0000"
+        },
+        {
+            "id": 110670868,
+            "posLat": 51.3999838,
+            "posLong": -1.0838921,
+            "fixS": 3,
+            "fixP": 1,
+            "horiPrec": 9,
+            "sat": 9,
+            "rssi": 102,
+            "acc": 2,
+            "flags": 0,
+            "timeMeasure": "2025-12-31T09:46:18.000+0000",
+            "timeDb": "2025-12-31T09:46:18.000+0000"
+        }
+    ]
+
+    def mock_post(self, url, json, timeout, headers=None):
+        captured['url'] = url
+        captured['json'] = json
+        captured['headers'] = headers
+        return DummyResponse(positions_json)
+
+    monkeypatch.setattr("requests.Session.post", mock_post)
+
+    positions = get_ccpositions(14758, 1767152926491, 1767174526491, token="test-token")
+    assert isinstance(positions, list)
+    assert len(positions) == 2
+    assert isinstance(positions[0], LastPos)
+    assert positions[0].id == 110670824
+    assert positions[0].posLat == 51.4000459
+    assert positions[0].posLong == -1.0838738
+    assert positions[1].id == 110670868
+    assert captured['json'] == {"devId": 14758, "filterTime": 1767152926491, "toTime": 1767174526491}
+    assert captured['headers'].get('Authorization') == "Bearer test-token"
+
+
+def test_get_ccpositions_http_error_raises(monkeypatch):
+    mock_post = Mock(side_effect=Exception("network error"))
+    monkeypatch.setattr("requests.Session.post", mock_post)
+
+    with pytest.raises(PetTracerError):
+        get_ccpositions(14758, 1767152926491, 1767174526491)
+
+
+def test_get_ccpositions_non_list_json_raises(monkeypatch):
+    mock_post = Mock(return_value=DummyResponse({"error": "not a list"}))
+    monkeypatch.setattr("requests.Session.post", mock_post)
+
+    with pytest.raises(PetTracerError):
+        get_ccpositions(14758, 1767152926491, 1767174526491)

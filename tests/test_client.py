@@ -155,21 +155,6 @@ def test_non_list_json_raises(monkeypatch):
         get_ccs_status()
 
 
-def test_get_ccs_status_rejects_login_result(monkeypatch):
-    """If caller passes the result of `login()` as the first argument, raise an error."""
-    # ensure we raise a helpful error rather than silently accepting the wrong type
-    with pytest.raises(PetTracerError) as exc:
-        get_ccs_status({"token": "tok-xyz", "session": requests.Session()})
-    assert "Invalid 'url' parameter" in str(exc.value)
-
-
-def test_get_ccs_status_invalid_first_arg_raises(monkeypatch):
-    # Passing random dicts should raise a helpful PetTracerError
-    with pytest.raises(PetTracerError) as exc:
-        get_ccs_status({'foo': 'bar'})
-    assert "Invalid 'url' parameter" in str(exc.value)
-
-
 def test_get_ccs_status_sets_auth_header(monkeypatch):
     captured = {}
 
@@ -428,3 +413,345 @@ def test_get_ccpositions_non_list_json_raises(monkeypatch):
 
     with pytest.raises(PetTracerError):
         get_ccpositions(14758, 1767152926491, 1767174526491)
+
+
+# ============================================================================
+# PetTracerClient and PetTracerDevice class tests
+# ============================================================================
+
+def test_pettracer_client_init_without_credentials():
+    """Test creating a client without auto-login."""
+    from pettracer.client import PetTracerClient
+    
+    client = PetTracerClient()
+    assert client.token is None
+    assert client.session is None
+    assert not client.is_authenticated
+
+
+def test_pettracer_client_login(monkeypatch):
+    """Test client login stores token and session."""
+    from pettracer.client import PetTracerClient
+    
+    def mock_post(self, url, json=None, timeout=None, headers=None):
+        class R:
+            status_code = 200
+            def raise_for_status(self):
+                return None
+            def json(self):
+                return {"access_token": "test-token-123"}
+        return R()
+    
+    monkeypatch.setattr("requests.Session.post", mock_post)
+    
+    client = PetTracerClient()
+    client.login("testuser", "testpass")
+    
+    assert client.token == "test-token-123"
+    assert client.session is not None
+    assert client.is_authenticated
+
+
+def test_pettracer_client_auto_login(monkeypatch):
+    """Test client with auto-login in constructor."""
+    from pettracer.client import PetTracerClient
+    
+    def mock_post(self, url, json=None, timeout=None, headers=None):
+        class R:
+            status_code = 200
+            def raise_for_status(self):
+                return None
+            def json(self):
+                return {"access_token": "auto-token"}
+        return R()
+    
+    monkeypatch.setattr("requests.Session.post", mock_post)
+    
+    client = PetTracerClient("user", "pass")
+    assert client.token == "auto-token"
+    assert client.is_authenticated
+
+
+def test_pettracer_client_get_all_devices_requires_auth():
+    """Test that get_all_devices raises if not authenticated."""
+    from pettracer.client import PetTracerClient
+    
+    client = PetTracerClient()
+    with pytest.raises(PetTracerError) as exc:
+        client.get_all_devices()
+    assert "Not authenticated" in str(exc.value)
+
+
+def test_pettracer_client_get_all_devices(monkeypatch):
+    """Test fetching all devices through client."""
+    from pettracer.client import PetTracerClient
+    
+    def mock_post(self, url, json=None, timeout=None, headers=None):
+        class R:
+            status_code = 200
+            def raise_for_status(self):
+                return None
+            def json(self):
+                return {"access_token": "token-xyz"}
+        return R()
+    
+    def mock_get(self, url, timeout, headers=None):
+        return DummyResponse(SAMPLE_JSON)
+    
+    monkeypatch.setattr("requests.Session.post", mock_post)
+    monkeypatch.setattr("requests.Session.get", mock_get)
+    
+    client = PetTracerClient()
+    client.login("user", "pass")
+    devices = client.get_all_devices()
+    
+    assert isinstance(devices, list)
+    assert len(devices) == 1
+    assert isinstance(devices[0], Device)
+    assert devices[0].id == 14758
+
+
+def test_pettracer_client_get_device_requires_auth():
+    """Test that get_device raises if not authenticated."""
+    from pettracer.client import PetTracerClient
+    
+    client = PetTracerClient()
+    with pytest.raises(PetTracerError) as exc:
+        client.get_device(14758)
+    assert "Not authenticated" in str(exc.value)
+
+
+def test_pettracer_client_get_device(monkeypatch):
+    """Test getting a device-specific client."""
+    from pettracer.client import PetTracerClient, PetTracerDevice
+    
+    def mock_post(self, url, json=None, timeout=None, headers=None):
+        class R:
+            status_code = 200
+            def raise_for_status(self):
+                return None
+            def json(self):
+                return {"access_token": "token"}
+        return R()
+    
+    monkeypatch.setattr("requests.Session.post", mock_post)
+    
+    client = PetTracerClient()
+    client.login("user", "pass")
+    device = client.get_device(14758)
+    
+    assert isinstance(device, PetTracerDevice)
+    assert device.device_id == 14758
+
+
+def test_pettracer_client_get_user_profile_requires_auth():
+    """Test that get_user_profile raises if not authenticated."""
+    from pettracer.client import PetTracerClient
+    
+    client = PetTracerClient()
+    with pytest.raises(PetTracerError) as exc:
+        client.get_user_profile()
+    assert "Not authenticated" in str(exc.value)
+
+
+def test_pettracer_client_get_user_profile(monkeypatch):
+    """Test fetching user profile through client."""
+    from pettracer.client import PetTracerClient
+    
+    profile_json = {
+        "id": 19804,
+        "email": "test@example.com",
+        "name": "Test User",
+    }
+    
+    def mock_post(self, url, json=None, timeout=None, headers=None):
+        class R:
+            status_code = 200
+            def raise_for_status(self):
+                return None
+            def json(self):
+                return {"access_token": "token"}
+        return R()
+    
+    def mock_get(self, url, timeout, headers=None):
+        return DummyResponse(profile_json)
+    
+    monkeypatch.setattr("requests.Session.post", mock_post)
+    monkeypatch.setattr("requests.Session.get", mock_get)
+    
+    from pettracer.types import UserProfile
+    
+    client = PetTracerClient()
+    client.login("user", "pass")
+    profile = client.get_user_profile()
+    
+    assert isinstance(profile, UserProfile)
+    assert profile.id == 19804
+    assert profile.email == "test@example.com"
+
+
+def test_pettracer_device_get_info(monkeypatch):
+    """Test fetching device info through device client."""
+    from pettracer.client import PetTracerClient
+    
+    captured = {}
+    
+    def mock_post(self, url, json=None, timeout=None, headers=None):
+        captured['url'] = url
+        captured['json'] = json
+        
+        if 'login' in url:
+            class R:
+                status_code = 200
+                def raise_for_status(self):
+                    return None
+                def json(self):
+                    return {"access_token": "token"}
+            return R()
+        else:
+            # getccinfo
+            return DummyResponse(SAMPLE_JSON)
+    
+    monkeypatch.setattr("requests.Session.post", mock_post)
+    
+    client = PetTracerClient()
+    client.login("user", "pass")
+    device = client.get_device(14758)
+    
+    info = device.get_info()
+    
+    assert isinstance(info, list)
+    assert info[0].id == 14758
+    assert captured['json'] == {"devId": 14758}
+
+
+def test_pettracer_device_get_positions(monkeypatch):
+    """Test fetching device positions through device client."""
+    from pettracer.client import PetTracerClient
+    
+    captured = {}
+    
+    positions_json = [
+        {
+            "id": 110670824,
+            "posLat": 51.4000459,
+            "posLong": -1.0838738,
+            "fixS": 3,
+            "fixP": 1,
+            "horiPrec": 12,
+            "sat": 9,
+            "rssi": 103,
+            "acc": 2,
+            "flags": 32,
+            "timeMeasure": "2025-12-31T09:45:47.000+0000",
+            "timeDb": "2025-12-31T09:45:48.000+0000"
+        }
+    ]
+    
+    def mock_post(self, url, json=None, timeout=None, headers=None):
+        captured['url'] = url
+        captured['json'] = json
+        
+        if 'login' in url:
+            class R:
+                status_code = 200
+                def raise_for_status(self):
+                    return None
+                def json(self):
+                    return {"access_token": "token"}
+            return R()
+        else:
+            # getccpositions
+            return DummyResponse(positions_json)
+    
+    monkeypatch.setattr("requests.Session.post", mock_post)
+    
+    client = PetTracerClient()
+    client.login("user", "pass")
+    device = client.get_device(14758)
+    
+    positions = device.get_positions(1767152926491, 1767174526491)
+    
+    assert isinstance(positions, list)
+    assert isinstance(positions[0], LastPos)
+    assert positions[0].id == 110670824
+    assert positions[0].posLat == 51.4000459
+    assert captured['json'] == {"devId": 14758, "filterTime": 1767152926491, "toTime": 1767174526491}
+
+
+def test_pettracer_device_id_property():
+    """Test device_id property."""
+    from pettracer.client import PetTracerClient, PetTracerDevice
+    
+    client = PetTracerClient()
+    client._token = "fake-token"
+    client._session = requests.Session()
+    
+    device = PetTracerDevice(12345, client)
+    assert device.device_id == 12345
+
+
+def test_pettracer_client_login_info_properties(monkeypatch):
+    """Test that login stores and exposes user information via properties."""
+    from pettracer.client import PetTracerClient
+    
+    def mock_post(self, url, json=None, timeout=None, headers=None):
+        class R:
+            status_code = 200
+            def raise_for_status(self):
+                return None
+            def json(self):
+                return {
+                    'id': 15979,
+                    'login': 'test@example.com',
+                    'name': 'Test User',
+                    'lang': 'en_GB',
+                    'country_id': [231, 'United Kingdom'],
+                    'numberOfCCs': 2,
+                    'partnerId': 19804,
+                    'access_token': 'test-token-123',
+                    'expires': '2026-01-31',
+                    'abo': {
+                        'id': 4649776,
+                        'userId': 15979,
+                        'dateExpires': '2026-09-03',
+                        'odooId': 28565,
+                    }
+                }
+        return R()
+    
+    monkeypatch.setattr("requests.Session.post", mock_post)
+    
+    client = PetTracerClient()
+    client.login("user", "pass")
+    
+    # Test all properties
+    assert client.user_id == 15979
+    assert client.user_name == "Test User"
+    assert client.email == "test@example.com"
+    assert client.partner_id == 19804
+    assert client.language == "en_GB"
+    assert client.country == "United Kingdom"
+    assert client.country_id == 231
+    assert client.device_count == 2
+    assert client.token_expires.strftime("%Y-%m-%d") == "2026-01-31"
+    assert client.subscription_expires.strftime("%Y-%m-%d") == "2026-09-03"
+    assert client.subscription_id == 4649776
+    assert client.login_info is not None
+    assert client.subscription_info is not None
+
+
+def test_pettracer_client_login_info_none_before_login():
+    """Test that properties return None before login."""
+    from pettracer.client import PetTracerClient
+    
+    client = PetTracerClient()
+    
+    assert client.user_id is None
+    assert client.user_name is None
+    assert client.email is None
+    assert client.partner_id is None
+    assert client.device_count is None
+    assert client.token_expires is None
+    assert client.subscription_expires is None
+    assert client.login_info is None

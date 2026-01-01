@@ -9,3 +9,6 @@ __pycache__/
 
 # pytest cache
 .pytest_cache/
+
+# Environment variables (contains secrets)
+.env

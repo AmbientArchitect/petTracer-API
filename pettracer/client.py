@@ -1,5 +1,9 @@
-"""Simple PetTracer client for fetching CCS status and other endpoints."""
+""" PetTracer client for interacting with a petTracer collar.
+    You need to own a collar, have a valid subscription, and an account.
+    www.pettracer.com provides the web interface and mobile apps.
+"""
 from typing import Any, List, Optional
+from datetime import datetime
 import os
 
 import requests
@@ -8,9 +12,9 @@ import json
 from .types import Device, LastPos
 
 
-DEFAULT_URL = "https://portal.pettracer.com/api/map/getccs"
-DEFAULT_CCINFO_URL = "https://portal.pettracer.com/api/map/getccinfo"
-DEFAULT_CCPOSITIONS_URL = "https://portal.pettracer.com/api/map/getccpositions"
+GETCCS_URL = "https://portal.pettracer.com/api/map/getccs"
+CCINFO_URL = "https://portal.pettracer.com/api/map/getccinfo"
+CCPOSITIONS_URL = "https://portal.pettracer.com/api/map/getccpositions"
 LOGIN_URL = "https://portal.pettracer.com/api/user/login"
 USER_PROFILE_URL = "https://portal.pettracer.com/api/user/profile"
 
@@ -44,11 +48,10 @@ def _login_headers() -> dict:
     return headers
 
 
-def get_ccs_status(url: str = DEFAULT_URL, session: Optional[requests.Session] = None, token: Optional[str] = None, timeout: int = 10) -> List[Device]:
+def get_ccs_status(session: Optional[requests.Session] = None, token: str = None, timeout: int = 10) -> List[Device]:
     """Fetch the CCS status list from PetTracer and return parsed Device objects.
 
     Args:
-        url: Full URL to call (defaults to the documented endpoint)
         session: Optional requests.Session to use
         token: Optional bearer token (or set PETTRACER_TOKEN env var)
         timeout: Request timeout in seconds
@@ -60,20 +63,10 @@ def get_ccs_status(url: str = DEFAULT_URL, session: Optional[requests.Session] =
         PetTracerError: for network or parsing issues
     """
     sess = session or requests.Session()
-
-    # Validate URL type early and provide a clearer error message that helps
-    # callers who mistakenly pass the `login()` result as the first argument.
-    if not isinstance(url, str):
-        raise PetTracerError(
-            "Invalid 'url' parameter supplied to get_ccs_status; expected a string URL."
-            " Did you pass the result of `login()` as the first argument? Use"
-            " `login_res = login(...); get_ccs_status(token=login_res['token'], session=login_res['session'])`"
-        )
-
     headers = _request_headers(token)
 
     try:
-        resp = sess.get(url, timeout=timeout, headers=headers)
+        resp = sess.get(GETCCS_URL, timeout=timeout, headers=headers)
         resp.raise_for_status()
     except Exception as exc:
         raise PetTracerError(f"HTTP error while fetching CCS status: {exc}") from exc
@@ -96,7 +89,7 @@ def get_ccs_status(url: str = DEFAULT_URL, session: Optional[requests.Session] =
     return devices
 
 
-def get_ccinfo(payload: Any, url: str = DEFAULT_CCINFO_URL, session: Optional[requests.Session] = None, token: Optional[str] = None, timeout: int = 10) -> Any:
+def get_ccinfo(payload: Any, session: Optional[requests.Session] = None, token: Optional[str] = None, timeout: int = 10) -> Any:
     """Call the `getccinfo` endpoint with the device id payload.
 
     The `getccinfo` endpoint expects a JSON body of the form `{"devId": <int>}`.
@@ -106,7 +99,6 @@ def get_ccinfo(payload: Any, url: str = DEFAULT_CCINFO_URL, session: Optional[re
 
     Args:
         payload: device id (int) or payload dict containing `devId` or `id`
-        url: endpoint URL
         session: Optional requests.Session to use
         token: Optional bearer token (or set PETTRACER_TOKEN env var)
         timeout: Request timeout in seconds
@@ -134,7 +126,7 @@ def get_ccinfo(payload: Any, url: str = DEFAULT_CCINFO_URL, session: Optional[re
     headers = _request_headers(token)
 
     try:
-        resp = sess.post(url, json=body, timeout=timeout, headers=headers)
+        resp = sess.post(CCINFO_URL, json=body, timeout=timeout, headers=headers)
         resp.raise_for_status()
     except Exception as exc:
         raise PetTracerError(f"HTTP error while calling getccinfo: {exc}") from exc
@@ -193,10 +185,10 @@ def login(username: str, password: str, session: Optional[requests.Session] = No
     if token_env:
         os.environ["PETTRACER_TOKEN"] = token
 
-    return {"token": token, "session": sess}
+    return {"token": token, "session": sess, "data": j}
 
 
-def get_ccpositions(dev_id: int, filter_time: int, to_time: int, url: str = DEFAULT_CCPOSITIONS_URL, session: Optional[requests.Session] = None, token: Optional[str] = None, timeout: int = 10) -> List[LastPos]:
+def get_ccpositions(dev_id: int, filter_time: int, to_time: int, session: Optional[requests.Session] = None, token: Optional[str] = None, timeout: int = 10) -> List[LastPos]:
     """Fetch device positions for a given time range.
 
     The `getccpositions` endpoint returns device positions with a time range filter.
@@ -205,7 +197,6 @@ def get_ccpositions(dev_id: int, filter_time: int, to_time: int, url: str = DEFA
         dev_id: Device ID to fetch positions for
         filter_time: Start time in milliseconds (Unix timestamp * 1000)
         to_time: End time in milliseconds (Unix timestamp * 1000)
-        url: endpoint URL
         session: Optional requests.Session to use
         token: Optional bearer token (or set PETTRACER_TOKEN env var)
         timeout: Request timeout in seconds
@@ -221,7 +212,7 @@ def get_ccpositions(dev_id: int, filter_time: int, to_time: int, url: str = DEFA
     headers = _request_headers(token)
 
     try:
-        resp = sess.post(url, json=body, timeout=timeout, headers=headers)
+        resp = sess.post(CCPOSITIONS_URL, json=body, timeout=timeout, headers=headers)
         resp.raise_for_status()
     except Exception as exc:
         raise PetTracerError(f"HTTP error while calling getccpositions: {exc}") from exc
@@ -244,13 +235,13 @@ def get_ccpositions(dev_id: int, filter_time: int, to_time: int, url: str = DEFA
     return positions
 
 
-def get_user_profile(url: str = USER_PROFILE_URL, session: Optional[requests.Session] = None, token: Optional[str] = None, timeout: int = 10) -> 'UserProfile':
+def get_user_profile(session: Optional[requests.Session] = None, token: Optional[str] = None, timeout: int = 10) -> 'UserProfile':
     """Fetch the account profile for the current token and return a typed UserProfile."""
     sess = session or requests.Session()
     headers = _request_headers(token)
 
     try:
-        resp = sess.get(url, timeout=timeout, headers=headers)
+        resp = sess.get(USER_PROFILE_URL, timeout=timeout, headers=headers)
         resp.raise_for_status()
     except Exception as exc:
         raise PetTracerError(f"HTTP error while fetching user profile: {exc}") from exc
@@ -266,3 +257,287 @@ def get_user_profile(url: str = USER_PROFILE_URL, session: Optional[requests.Ses
 
     from .types import UserProfile
     return UserProfile.from_dict(data)
+
+
+class PetTracerClient:
+    """Client for PetTracer API user-level operations.
+    
+    Manages authentication and provides access to user-level operations like
+    fetching all devices and user profile information.
+    
+    Example:
+        >>> client = PetTracerClient()
+        >>> client.login("username", "password")
+        >>> print(client.user_name)
+        >>> print(client.subscription_expires)
+        >>> devices = client.get_all_devices()
+        >>> device = client.get_device(14758)
+        >>> positions = device.get_positions(1767152926491, 1767174526491)
+    """
+    
+    def __init__(self, username: Optional[str] = None, password: Optional[str] = None):
+        """Initialize PetTracer client, optionally with auto-login.
+        
+        Args:
+            username: Optional username for automatic login
+            password: Optional password for automatic login
+        """
+        self._token: Optional[str] = None
+        self._session: Optional[requests.Session] = None
+        self._login_info: Optional['LoginInfo'] = None
+        
+        if username and password:
+            self.login(username, password)
+    
+    @property
+    def token(self) -> Optional[str]:
+        """Get the current authentication token."""
+        return self._token
+    
+    @property
+    def session(self) -> Optional[requests.Session]:
+        """Get the current requests session."""
+        return self._session
+    
+    @property
+    def is_authenticated(self) -> bool:
+        """Check if the client is authenticated."""
+        return self._token is not None
+    
+    @property
+    def login_info(self) -> Optional['LoginInfo']:
+        """Get the full login information dataclass."""
+        return self._login_info
+    
+    @property
+    def user_id(self) -> Optional[int]:
+        """Get the user ID."""
+        return self._login_info.id if self._login_info else None
+    
+    @property
+    def user_name(self) -> Optional[str]:
+        """Get the user's name."""
+        return self._login_info.name if self._login_info else None
+    
+    @property
+    def email(self) -> Optional[str]:
+        """Get the user's email address."""
+        return self._login_info.login if self._login_info else None
+    
+    @property
+    def partner_id(self) -> Optional[int]:
+        """Get the partner ID."""
+        return self._login_info.partnerId if self._login_info else None
+    
+    @property
+    def language(self) -> Optional[str]:
+        """Get the user's language preference."""
+        return self._login_info.lang if self._login_info else None
+    
+    @property
+    def country(self) -> Optional[str]:
+        """Get the user's country name."""
+        if self._login_info and self._login_info.country_id and len(self._login_info.country_id) > 1:
+            return self._login_info.country_id[1]
+        return None
+    
+    @property
+    def country_id(self) -> Optional[int]:
+        """Get the user's country ID."""
+        if self._login_info and self._login_info.country_id and len(self._login_info.country_id) > 0:
+            return self._login_info.country_id[0]
+        return None
+    
+    @property
+    def device_count(self) -> Optional[int]:
+        """Get the number of devices owned by the user."""
+        return self._login_info.numberOfCCs if self._login_info else None
+    
+    @property
+    def token_expires(self) -> Optional[datetime]:
+        """Get the token expiration date."""
+        return self._login_info.expires if self._login_info else None
+    
+    @property
+    def subscription_info(self) -> Optional['SubscriptionInfo']:
+        """Get the subscription information."""
+        return self._login_info.abo if self._login_info else None
+    
+    @property
+    def subscription_expires(self) -> Optional[datetime]:
+        """Get the subscription expiration date."""
+        if self._login_info and self._login_info.abo:
+            return self._login_info.abo.dateExpires
+        return None
+    
+    @property
+    def subscription_id(self) -> Optional[int]:
+        """Get the subscription ID."""
+        if self._login_info and self._login_info.abo:
+            return self._login_info.abo.id
+        return None
+    
+    def login(self, username: str, password: str, timeout: int = 10) -> None:
+        """Authenticate with PetTracer API and store credentials.
+        
+        Args:
+            username: PetTracer account username
+            password: PetTracer account password
+            timeout: Request timeout in seconds
+            
+        Raises:
+            PetTracerError: If login fails
+        """
+        result = login(username, password, timeout=timeout)
+        self._token = result["token"]
+        self._session = result["session"]
+        
+        # Parse and store login info
+        from .types import LoginInfo
+        self._login_info = LoginInfo.from_dict(result["data"])
+    
+    def get_all_devices(self, timeout: int = 10) -> List[Device]:
+        """Fetch all devices for the authenticated user.
+        
+        Args:
+            timeout: Request timeout in seconds
+            
+        Returns:
+            List of Device objects
+            
+        Raises:
+            PetTracerError: If not authenticated or request fails
+        """
+        if not self.is_authenticated:
+            raise PetTracerError("Not authenticated. Call login() first.")
+        
+        return get_ccs_status(
+            session=self._session,
+            token=self._token,
+            timeout=timeout
+        )
+    
+    def get_device(self, device_id: int) -> "PetTracerDevice":
+        """Get a device-specific client for the given device ID.
+        
+        Args:
+            device_id: The device ID to operate on
+            
+        Returns:
+            PetTracerDevice instance for device-specific operations
+            
+        Raises:
+            PetTracerError: If not authenticated
+        """
+        if not self.is_authenticated:
+            raise PetTracerError("Not authenticated. Call login() first.")
+        
+        return PetTracerDevice(device_id, self)
+    
+    def get_user_profile(self, timeout: int = 10):
+        """Fetch the user profile information and update stored login data.
+        
+        Args:
+            timeout: Request timeout in seconds
+            
+        Returns:
+            UserProfile object
+            
+        Raises:
+            PetTracerError: If not authenticated or request fails
+        """
+        if not self.is_authenticated:
+            raise PetTracerError("Not authenticated. Call login() first.")
+        
+        profile = get_user_profile(
+            session=self._session,
+            token=self._token,
+            timeout=timeout
+        )
+        
+        # Update stored login info with profile data
+        if self._login_info:
+            self._login_info.name = profile.name
+            self._login_info.login = profile.email
+            self._login_info.lang = profile.lang
+            if profile.country_id:
+                self._login_info.country_id = [profile.country_id, None]
+        
+        return profile
+
+
+class PetTracerDevice:
+    """Device-specific client for PetTracer API operations.
+    
+    Provides access to device-specific operations like fetching device info
+    and position history. Should be created via PetTracerClient.get_device().
+    
+    Example:
+        >>> client = PetTracerClient()
+        >>> client.login("username", "password")
+        >>> device = client.get_device(14758)
+        >>> info = device.get_info()
+        >>> positions = device.get_positions(1767152926491, 1767174526491)
+    """
+    
+    def __init__(self, device_id: int, client: PetTracerClient):
+        """Initialize device client.
+        
+        Args:
+            device_id: The device ID this client operates on
+            client: Parent PetTracerClient instance for authentication
+        """
+        self._device_id = device_id
+        self._client = client
+    
+    @property
+    def device_id(self) -> int:
+        """Get the device ID."""
+        return self._device_id
+    
+    def get_info(self, timeout: int = 10):
+        """Fetch detailed information for this device.
+        
+        Args:
+            timeout: Request timeout in seconds
+            
+        Returns:
+            Device object or list of Device objects
+            
+        Raises:
+            PetTracerError: If request fails
+        """
+        return get_ccinfo(
+            payload=self._device_id,
+            session=self._client.session,
+            token=self._client.token,
+            timeout=timeout
+        )
+    
+    def get_positions(
+        self,
+        filter_time: int,
+        to_time: int,
+        timeout: int = 10
+    ) -> List[LastPos]:
+        """Fetch position history for this device within a time range.
+        
+        Args:
+            filter_time: Start time in milliseconds since epoch
+            to_time: End time in milliseconds since epoch
+            timeout: Request timeout in seconds
+            
+        Returns:
+            List of LastPos objects with position data
+            
+        Raises:
+            PetTracerError: If request fails
+        """
+        return get_ccpositions(
+            dev_id=self._device_id,
+            filter_time=filter_time,
+            to_time=to_time,
+            session=self._client.session,
+            token=self._client.token,
+            timeout=timeout
+        )

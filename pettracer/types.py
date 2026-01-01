@@ -16,6 +16,94 @@ def _parse_datetime(s: Optional[str]) -> Optional[datetime]:
             return None
 
 
+def _parse_date(s: Optional[str]) -> Optional[datetime]:
+    """Parse date in format: 2026-01-31"""
+    if s is None:
+        return None
+    try:
+        return datetime.strptime(s, "%Y-%m-%d")
+    except Exception:
+        return None
+
+
+@dataclass
+class SubscriptionInfo:
+    """Subscription information from login response."""
+    id: Optional[int]
+    subscription: Optional[Dict[str, Any]]
+    userId: Optional[int]
+    dateExpires: Optional[datetime]
+    odooId: Optional[int]
+    name: Optional[str]
+    paypalSubscriptionId: Optional[str]
+
+    @classmethod
+    def from_dict(cls, d: Optional[Dict[str, Any]]):
+        if d is None:
+            return None
+        return cls(
+            id=d.get("id"),
+            subscription=d.get("subscription"),
+            userId=d.get("userId"),
+            dateExpires=_parse_date(d.get("dateExpires")),
+            odooId=d.get("odooId"),
+            name=d.get("name"),
+            paypalSubscriptionId=d.get("paypalSubscriptionId"),
+        )
+
+
+@dataclass
+class LoginInfo:
+    """Complete login response information."""
+    id: Optional[int]
+    login: Optional[str]
+    signup_token: Optional[str]
+    signup_type: Optional[str]
+    active: Optional[str]
+    state: Optional[str]
+    lang: Optional[str]
+    name: Optional[str]
+    password: Optional[str]
+    partner_id: Optional[List[Any]]  # [id, name]
+    x_studio_roles: Optional[List[int]]
+    access_token: Optional[str]
+    expires: Optional[datetime]
+    addEmails: Optional[List[str]]
+    country_id: Optional[List[Any]]  # [id, name]
+    show_is_home: Optional[bool]
+    numberOfCCs: Optional[int]
+    abo: Optional[SubscriptionInfo]
+    partnerId: Optional[int]
+    settings: Optional[Dict[str, Any]]
+
+    @classmethod
+    def from_dict(cls, d: Optional[Dict[str, Any]]):
+        if d is None:
+            return None
+        return cls(
+            id=d.get("id"),
+            login=d.get("login"),
+            signup_token=d.get("signup_token"),
+            signup_type=d.get("signup_type"),
+            active=d.get("active"),
+            state=d.get("state"),
+            lang=d.get("lang"),
+            name=d.get("name"),
+            password=d.get("password"),
+            partner_id=d.get("partner_id"),
+            x_studio_roles=d.get("x_studio_roles"),
+            access_token=d.get("access_token"),
+            expires=_parse_date(d.get("expires")),
+            addEmails=d.get("addEmails"),
+            country_id=d.get("country_id"),
+            show_is_home=d.get("show_is_home"),
+            numberOfCCs=d.get("numberOfCCs"),
+            abo=SubscriptionInfo.from_dict(d.get("abo")),
+            partnerId=d.get("partnerId"),
+            settings=d.get("settings"),
+        )
+
+
 @dataclass
 class MasterHs:
     id: Optional[int]

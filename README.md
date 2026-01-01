@@ -18,85 +18,126 @@ pip install -r requirements-dev.txt
 
 ## Quick usage examples ✨
 
-Basic CCS status fetch:
+### Class-based API (Recommended)
+
+The easiest way to use the library is with the `PetTracerClient` and `PetTracerDevice` classes:
 
 ```python
-from pettracer import get_ccs_status
+from pettracer import PetTracerClient
 
-devices = get_ccs_status()
-for d in devices:
-    print(d.id, d.details.name, d.lastPos.posLat)
+# Create client and login
+client = PetTracerClient()
+client.login("username", "password")
+
+# Get all devices
+devices = client.get_all_devices()
+for device in devices:
+    print(f"{device.id}: {device.details.name}")
+
+# Work with a specific device
+device = client.get_device(14758)
+
+# Get device info
+info = device.get_info()
+print(f"Battery: {info.bat if isinstance(info, list) else info[0].bat}")
+
+# Get position history (timestamps in milliseconds since epoch)
+positions = device.get_positions(
+    filter_time=1767152926491,
+    to_time=1767174526491
+)
+for pos in positions:
+    print(f"Position at {pos.timeMeasure}: {pos.posLat}, {pos.posLong}")
+
+# Get user profile
+profile = client.get_user_profile()
+print(f"User: {profile.name} ({profile.email})")
 ```
 
-`get_ccs_status()` returns a `List[Device]` where `Device` is a dataclass with nested `MasterHs`, `LastPos`, and `Details` objects.
+Auto-login on instantiation:
+
+```python
+from pettracer import PetTracerClient
+
+# Login automatically when creating the client
+client = PetTracerClient("username", "password")
+
+# Now you can immediately use the API
+devices = client.get_all_devices()
+```
 
 ## Authentication
 
-Some endpoints require a bearer token. You can provide it directly to calls as the `token` argument, or set an environment variable `PETTRACER_TOKEN` and the client will use it automatically.
-
-Authentication helper:
+The `PetTracerClient` class handles authentication automatically:
 
 ```python
-from pettracer import login
+from pettracer import PetTracerClient
 
-# JSON-based login that returns a token and session
-res = login("username", "password")
-print(res['token'])
+client = PetTracerClient()
+client.login("username", "password")
+
+# Token and session are stored internally
+# All subsequent API calls use them automatically
+devices = client.get_all_devices()
+
+# Access user information from login response
+print(f"Welcome, {client.user_name}!")
+print(f"Devices: {client.device_count}")
+print(f"Subscription expires: {client.subscription_expires}")
 ```
 
-Login + using the returned session/token (preferred):
 
-```python
-from pettracer import login, get_ccs_status
+## API Reference
 
-res = login("username", "password")
-# res == {"token": "...", "session": <requests.Session>} 
+### Class-based API
 
-devices = get_ccs_status(token=res['token'], session=res['session'])
-```
+#### PetTracerClient
 
-Pretty-printing returned dataclasses:
+User-level operations for managing authentication and accessing devices.
 
-```python
-from dataclasses import asdict
-import json
+**Methods:**
+- `__init__(username=None, password=None)` - Create client, optionally with auto-login
+- `login(username, password)` - Authenticate with PetTracer API
+- `get_all_devices()` - Fetch all devices for the authenticated user
+- `get_device(device_id)` - Get a device-specific client
+- `get_user_profile()` - Fetch user profile information (updates cached data)
 
-print(json.dumps(asdict(devices[0]), indent=2, default=str))
-```
+**Authentication Properties:**
+- `token` - Current authentication token
+- `session` - Current requests session
+- `is_authenticated` - Whether the client is authenticated
+- `token_expires` - Token expiration date
 
-## get_ccinfo — device details (typed)
+**User Information Properties (available after login):**
+- `user_id` - User ID
+- `user_name` - User's full name
+- `email` - User's email address
+- `partner_id` - Partner ID
+- `language` - User's language preference
+- `country` - User's country name
+- `country_id` - User's country ID
+- `device_count` - Number of devices owned
 
-The `/api/map/getccinfo` endpoint expects a payload with `devId`.
-The client accepts either an `int` or a dict containing `id`/`devId`, and will
-normalize it to `{"devId": <int>}`.
+**Subscription Properties (available after login):**
+- `subscription_info` - Full SubscriptionInfo object
+- `subscription_id` - Subscription ID
+- `subscription_expires` - Subscription expiration date
 
-```python
-from pettracer import get_ccinfo
+**Raw Data Access:**
+- `login_info` - Full LoginInfo dataclass with all login response data
 
-# pass device id directly
-devices = get_ccinfo(14758)        # returns List[Device]
+#### PetTracerDevice
 
-# or pass an id key
-devices = get_ccinfo({"id": 14758})
-```
+Device-specific operations for a single device.
 
-The function returns typed `Device` objects (or a single `Device` if the server responds with a single dict).
+**Methods:**
+- `get_info()` - Fetch detailed information for this device
+- `get_positions(filter_time, to_time)` - Fetch position history within a time range (milliseconds since epoch)
 
-## get_user_profile — account info
+**Properties:**
+- `device_id` - The device ID
 
-Fetch the current account profile (returns `UserProfile` dataclass):
-
-```python
-from pettracer import get_user_profile
-
-profile = get_user_profile(token="YOUR_TOKEN")
-print(profile.email, profile.name)
-```
-
-## Authentication details
-
-- `login()` performs a JSON POST with keys `login` and `password` and returns `{"token":..., "session": <requests.Session>}`.
-- Prefer passing `token` and `session` explicitly to other calls rather than passing the `login()` result as the first positional argument.
+## Security
 - Tokens are secrets — store them securely (env var `PETTRACER_TOKEN` is supported).
 
 **Security note:** Treat bearer tokens as secrets—store them in environment variables or a secure vault, and avoid committing them to source control.
@@ -112,9 +153,75 @@ pytest -q
 
 Tests use `pytest` and `monkeypatch` to stub HTTP responses. See `requirements-dev.txt` for dev dependencies.
 
-## VS Code workspace
+## VS Code Configuration
 
-This workspace includes recommended VS Code settings to pin the interpreter to the workspace `.venv` and enable pytest in the Testing panel. See `.vscode/settings.json`.
+This workspace is pre-configured for VS Code with the following features:
+
+### Running Examples and Scripts
+
+The workspace includes launch configurations in [.vscode/launch.json](.vscode/launch.json) for easy debugging:
+
+1. **Python: Current File** - Run/debug any Python file with F5
+2. **Python: Class-based Example** - Run the example with prompted credentials
+3. **Python: Run with .env** - Run scripts using credentials from `.env` file
+
+#### Option 1: Using .env file (Recommended)
+
+1. Copy `.env.example` to `.env`:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit `.env` and add your credentials:
+   ```bash
+   PETTRACER_USERNAME=your_username
+   PETTRACER_PASSWORD=your_password
+   ```
+
+3. Open `examples/class_based_example.py` in VS Code
+4. Press `F5` or select **Run > Start Debugging**
+5. Choose **"Python: Run with .env"**
+
+#### Option 2: Using Terminal
+
+The workspace automatically sets `PYTHONPATH` in new terminals:
+
+```bash
+# Activate virtual environment
+source .venv/bin/activate
+
+# Set credentials
+export PETTRACER_USERNAME="your_username"
+export PETTRACER_PASSWORD="your_password"
+
+# Run the example
+python examples/class_based_example.py
+```
+
+#### Option 3: Prompted Credentials
+
+1. Open `examples/class_based_example.py`
+2. Press `F5`
+3. Choose **"Python: Class-based Example"**
+4. VS Code will prompt for username and password
+
+### Testing
+
+The workspace is configured for pytest:
+
+- Tests are automatically discovered in the `tests/` directory
+- Use the Testing sidebar (beaker icon) to run/debug tests
+- Or run from terminal: `pytest -v`
+
+### Python Interpreter
+
+The workspace uses the local virtual environment at `.venv/`. If you need to create it:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+```
 
 ---
 

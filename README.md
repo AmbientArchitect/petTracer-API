@@ -1,228 +1,324 @@
-# pettracer - www.pettracer.com
+# PetTracer API Client
 
-Minimal Python client for the PetTracer portal.
+Python client library for the [PetTracer](https://www.pettracer.com) GPS pet collar portal. Provides a clean, object-oriented interface for managing devices, tracking positions, and accessing user information.
 
-## Installation ✅
+**Note:** This is an unofficial API derived from the petTracer web site. Use with caution and respect for their service. You need to own a pet collar, have an account and paid subscription for this client to be useful.
 
-Install runtime deps:
+## Features
+
+- 🎯 **Object-oriented design** - Clean class hierarchy for intuitive API usage
+- 🔐 **Automatic authentication** - Login once, use everywhere
+- 📍 **Position tracking** - Fetch device locations with time-range filtering
+- 👤 **User management** - Access profile and subscription information
+- 🐾 **Device management** - Control and monitor multiple pet collars
+- 📊 **Typed data models** - Full dataclass support for all responses
+- ✅ **Well tested** - Comprehensive test suite included
+
+## Installation
+
+Install the required dependencies:
 
 ```bash
 pip install requests
 ```
 
-For development and running tests, install the dev requirements:
+For development:
 
 ```bash
 pip install -r requirements-dev.txt
 ```
 
-## Quick usage examples ✨
-
-### Class-based API (Recommended)
-
-The easiest way to use the library is with the `PetTracerClient` and `PetTracerDevice` classes:
+## Quick Start
 
 ```python
 from pettracer import PetTracerClient
 
-# Create client and login
+# Create client and authenticate
 client = PetTracerClient()
-client.login("username", "password")
+client.login("your_username", "your_password")
+
+# Access user information (cached from login)
+print(f"Welcome, {client.user_name}!")
+print(f"You have {client.device_count} device(s)")
+print(f"Subscription expires: {client.subscription_expires}")
 
 # Get all devices
 devices = client.get_all_devices()
 for device in devices:
-    print(f"{device.id}: {device.details.name}")
+    print(f"{device.details.name}: Battery {device.bat}mV")
 
 # Work with a specific device
-device = client.get_device(14758)
-
-# Get device info
-info = device.get_info()
-print(f"Battery: {info.bat if isinstance(info, list) else info[0].bat}")
-
-# Get position history (timestamps in milliseconds since epoch)
-positions = device.get_positions(
-    filter_time=1767152926491,
+pet_device = client.get_device(devices[0].id)
+positions = pet_device.get_positions(
+    filter_time=1767152926491,  # Unix timestamp in milliseconds
     to_time=1767174526491
 )
-for pos in positions:
-    print(f"Position at {pos.timeMeasure}: {pos.posLat}, {pos.posLong}")
-
-# Get user profile
-profile = client.get_user_profile()
-print(f"User: {profile.name} ({profile.email})")
 ```
 
-Auto-login on instantiation:
+For a complete working example, see [examples/class_based_example.py](examples/class_based_example.py).
 
-```python
-from pettracer import PetTracerClient
+## Architecture
 
-# Login automatically when creating the client
-client = PetTracerClient("username", "password")
+The library uses a two-tier class architecture:
 
-# Now you can immediately use the API
-devices = client.get_all_devices()
+### Client Hierarchy
+
+```
+PetTracerClient (user-level operations)
+    ├── Authentication & session management
+    ├── User profile & subscription info
+    └── Device discovery
+         └── PetTracerDevice (device-specific operations)
+              ├── Device information
+              └── Position history
 ```
 
-## Authentication
+### Key Classes
 
-The `PetTracerClient` class handles authentication automatically:
+#### `PetTracerClient`
 
+The main entry point for all API operations. Manages authentication and provides access to user-level functionality.
+
+**Initialization:**
 ```python
-from pettracer import PetTracerClient
-
+# Standard login
 client = PetTracerClient()
-client.login("username", "password")
+client.login(username, password)
 
-# Token and session are stored internally
-# All subsequent API calls use them automatically
-devices = client.get_all_devices()
-
-# Access user information from login response
-print(f"Welcome, {client.user_name}!")
-print(f"Devices: {client.device_count}")
-print(f"Subscription expires: {client.subscription_expires}")
+# Auto-login on creation
+client = PetTracerClient(username, password)
 ```
 
-
-## API Reference
-
-### Class-based API
-
-#### PetTracerClient
-
-User-level operations for managing authentication and accessing devices.
-
-**Methods:**
-- `__init__(username=None, password=None)` - Create client, optionally with auto-login
-- `login(username, password)` - Authenticate with PetTracer API
-- `get_all_devices()` - Fetch all devices for the authenticated user
+**Core Methods:**
+- `login(username, password)` - Authenticate and store credentials
+- `get_all_devices()` - Retrieve all devices owned by the user
 - `get_device(device_id)` - Get a device-specific client
-- `get_user_profile()` - Fetch user profile information (updates cached data)
+- `get_user_profile()` - Fetch detailed user profile (updates cached data)
 
-**Authentication Properties:**
-- `token` - Current authentication token
-- `session` - Current requests session
-- `is_authenticated` - Whether the client is authenticated
-- `token_expires` - Token expiration date
+**Authentication:**
+- `is_authenticated` - Check if logged in
+- `token` - Current bearer token
+- `token_expires` - Token expiration datetime
+- `session` - Requests session object
 
-**User Information Properties (available after login):**
-- `user_id` - User ID
-- `user_name` - User's full name
-- `email` - User's email address
-- `partner_id` - Partner ID
-- `language` - User's language preference
-- `country` - User's country name
-- `country_id` - User's country ID
-- `device_count` - Number of devices owned
+**User Information (available after login):**
+- `user_id`, `user_name`, `email`
+- `partner_id`, `language`
+- `country`, `country_id`
+- `device_count` - Number of devices
 
-**Subscription Properties (available after login):**
-- `subscription_info` - Full SubscriptionInfo object
-- `subscription_id` - Subscription ID
-- `subscription_expires` - Subscription expiration date
+**Subscription:**
+- `subscription_id` - Subscription identifier
+- `subscription_expires` - Expiration date
+- `subscription_info` - Full `SubscriptionInfo` object
 
-**Raw Data Access:**
-- `login_info` - Full LoginInfo dataclass with all login response data
+**Raw Data:**
+- `login_info` - Complete `LoginInfo` dataclass with all login response data
 
-#### PetTracerDevice
+#### `PetTracerDevice`
 
-Device-specific operations for a single device.
+Represents a single pet tracker device. Created via `client.get_device(device_id)`.
 
 **Methods:**
-- `get_info()` - Fetch detailed information for this device
-- `get_positions(filter_time, to_time)` - Fetch position history within a time range (milliseconds since epoch)
+- `get_info()` - Fetch current device information
+- `get_positions(filter_time, to_time)` - Get position history within time range
 
 **Properties:**
-- `device_id` - The device ID
+- `device_id` - The device identifier
 
-## Security
-- Tokens are secrets — store them securely (env var `PETTRACER_TOKEN` is supported).
+**Time Parameters:**
+Position history methods use Unix timestamps in milliseconds:
+```python
+from datetime import datetime, timedelta
 
-**Security note:** Treat bearer tokens as secrets—store them in environment variables or a secure vault, and avoid committing them to source control.
+now = datetime.now()
+yesterday = now - timedelta(days=1)
 
-## Tests
-
-Run the test suite:
-
-```bash
-pip install -r requirements-dev.txt
-pytest -q
+positions = device.get_positions(
+    filter_time=int(yesterday.timestamp() * 1000),
+    to_time=int(now.timestamp() * 1000)
+)
 ```
 
-Tests use `pytest` and `monkeypatch` to stub HTTP responses. See `requirements-dev.txt` for dev dependencies.
+## Data Models
 
-## VS Code Configuration
+All API responses are parsed into typed dataclasses for easy access and IDE autocomplete support.
 
-This workspace is pre-configured for VS Code with the following features:
+### Core Types
 
-### Running Examples and Scripts
+**`Device`** - Complete device information:
+- `id`, `bat` (battery), `status`, `mode`
+- `details` - `Details` object with name, image, birth date
+- `lastPos` - `LastPos` object with most recent position
+- `masterHs` - Master home station information
+- `lastContact`, `homeSince` - Timestamps
+- Many more fields for device state
 
-The workspace includes launch configurations in [.vscode/launch.json](.vscode/launch.json) for easy debugging:
+**`LastPos`** - Position data:
+- `posLat`, `posLong` - Coordinates
+- `timeMeasure`, `timeDb` - Timestamps
+- `sat` - Satellite count
+- `rssi` - Signal strength
+- `fixS`, `fixP`, `horiPrec` - GPS quality metrics
+- `acc` - Accuracy
+- `flags` - Status flags
 
-1. **Python: Current File** - Run/debug any Python file with F5
-2. **Python: Class-based Example** - Run the example with prompted credentials
-3. **Python: Run with .env** - Run scripts using credentials from `.env` file
+**`Details`** - Device/pet details:
+- `name` - Pet name
+- `birth` - Birth date
+- `image`, `img` - Image references
+- `color` - Color code
 
-#### Option 1: Using .env file (Recommended)
+**`UserProfile`** - User account information:
+- `id`, `email`, `name`
+- `street`, `street2`, `zip`, `city`
+- `mobile`, `lang`, `country_id`
+- Additional profile fields
 
-1. Copy `.env.example` to `.env`:
-   ```bash
-   cp .env.example .env
-   ```
+**`LoginInfo`** - Complete login response data:
+- User identification and account details
+- Authentication tokens and expiration
+- Subscription information via `abo` field
+- Settings and preferences
 
-2. Edit `.env` and add your credentials:
-   ```bash
-   PETTRACER_USERNAME=your_username
-   PETTRACER_PASSWORD=your_password
-   ```
+**`SubscriptionInfo`** - Subscription details:
+- `id`, `userId`, `odooId`
+- `dateExpires` - Expiration date
+- `paypalSubscriptionId`
+- Raw subscription dict
 
-3. Open `examples/class_based_example.py` in VS Code
-4. Press `F5` or select **Run > Start Debugging**
-5. Choose **"Python: Run with .env"**
+### Working with Data
 
-#### Option 2: Using Terminal
+```python
+# Device information
+device = devices[0]
+print(f"Pet: {device.details.name}")
+print(f"Battery: {device.bat}mV")
+print(f"Last seen: {device.lastContact}")
 
-The workspace automatically sets `PYTHONPATH` in new terminals:
+if device.lastPos:
+    print(f"Location: {device.lastPos.posLat}, {device.lastPos.posLong}")
+    print(f"Satellites: {device.lastPos.sat}")
+    print(f"Time: {device.lastPos.timeMeasure}")
 
+# Position history
+for pos in positions:
+    print(f"{pos.timeMeasure}: ({pos.posLat}, {pos.posLong})")
+    print(f"  Accuracy: {pos.acc}m, Satellites: {pos.sat}")
+
+# User profile
+profile = client.get_user_profile()
+print(f"{profile.name} - {profile.email}")
+print(f"{profile.city}, {profile.zip}")
+```
+
+## Example Application
+
+See [examples/class_based_example.py](examples/class_based_example.py) for a complete working example that demonstrates:
+
+- Client initialization and login
+- Accessing user information and subscription details
+- Fetching and displaying all devices
+- Working with device-specific clients
+- Retrieving position history with time ranges
+- Error handling and data validation
+
+Run the example:
 ```bash
-# Activate virtual environment
-source .venv/bin/activate
-
-# Set credentials
 export PETTRACER_USERNAME="your_username"
 export PETTRACER_PASSWORD="your_password"
-
-# Run the example
 python examples/class_based_example.py
 ```
 
-#### Option 3: Prompted Credentials
+## Security
 
-1. Open `examples/class_based_example.py`
-2. Press `F5`
-3. Choose **"Python: Class-based Example"**
-4. VS Code will prompt for username and password
+⚠️ **Important:** Authentication tokens are secrets. Always:
 
-### Testing
+- Store credentials in environment variables or secure vaults
+- Never commit tokens or passwords to version control
+- Use `.env` files (which are gitignored) for local development
+- Rotate tokens regularly
 
-The workspace is configured for pytest:
+The client supports token storage via environment variable:
+```python
+import os
+os.environ['PETTRACER_TOKEN'] = 'your_token_here'
+```
 
-- Tests are automatically discovered in the `tests/` directory
-- Use the Testing sidebar (beaker icon) to run/debug tests
-- Or run from terminal: `pytest -v`
+## Testing
 
-### Python Interpreter
-
-The workspace uses the local virtual environment at `.venv/`. If you need to create it:
+Run the comprehensive test suite:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+# Install test dependencies
 pip install -r requirements-dev.txt
+
+# Run all tests
+pytest -v
+
+# Run specific test file
+pytest tests/test_client.py -v
+
+# Run with coverage
+pytest --cov=pettracer tests/
 ```
+
+The test suite uses `pytest` with `monkeypatch` to mock HTTP responses, ensuring tests run without actual API calls.
+
+## VS Code Setup
+
+This workspace is pre-configured for VS Code development. See [VSCODE_GUIDE.md](VSCODE_GUIDE.md) for detailed instructions.
+
+### Quick Start in VS Code
+
+1. Copy `.env.example` to `.env` and add your credentials
+2. Open `examples/class_based_example.py`
+3. Press `F5` to run with debugging
+4. Choose **"Python: Run with .env"**
+
+The workspace includes:
+- Launch configurations for debugging
+- Automatic PYTHONPATH setup in terminals
+- pytest test discovery and debugging
+- Python interpreter configuration
+
+## Development
+
+### Project Structure
+
+```
+pettracer/
+├── __init__.py           # Package exports
+├── client.py             # PetTracerClient and PetTracerDevice classes
+└── types.py              # Dataclass definitions
+
+examples/
+└── class_based_example.py  # Complete usage example
+
+tests/
+└── test_client.py        # Test suite
+
+.vscode/
+├── settings.json         # VS Code configuration
+└── launch.json          # Debug configurations
+```
+
+### Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Ensure all tests pass
+5. Submit a pull request
+
+Issues and feature requests can be submitted via GitHub Issues.
+
+## License
+
+See repository for license information.
 
 ---
 
-Contributions welcome — please open issues or PRs if you want improvements or additional typed return objects.
+**Note:** This is an unofficial client library. PetTracer® is a trademark of its respective owner.

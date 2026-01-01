@@ -1,5 +1,10 @@
 # PetTracer API Client
 
+[![PyPI version](https://badge.fury.io/py/pettracer-client.svg)](https://badge.fury.io/py/pettracer-client)
+[![Python](https://img.shields.io/pypi/pyversions/pettracer-client.svg)](https://pypi.org/project/pettracer-client/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Status](https://img.shields.io/pypi/status/pettracer-client.svg)](https://pypi.org/project/pettracer-client/)
+
 Python client library for the [PetTracer](https://www.pettracer.com) GPS pet collar portal. Provides a clean, object-oriented interface for managing devices, tracking positions, and accessing user information.
 
 **Note:** This is an unofficial API derived from the petTracer web site. Use with caution and respect for their service. You need to own a pet collar, have an account and paid subscription for this client to be useful.
@@ -16,7 +21,13 @@ Python client library for the [PetTracer](https://www.pettracer.com) GPS pet col
 
 ## Installation
 
-Install the required dependencies:
+Install from PyPI:
+
+```bash
+pip install pettracer-client
+```
+
+Or install the required dependencies for development:
 
 ```bash
 pip install requests

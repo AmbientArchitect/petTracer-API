@@ -25,8 +25,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e .
-        pip install pytest pytest-asyncio pytest-cov
+        pip install -e ".[dev]"
     
     - name: Lint with ruff (if available)
       run: |
@@ -34,14 +33,13 @@ jobs:
         ruff check . --select E,F,W || echo "Ruff not configured, skipping..."
       continue-on-error: true
     
-    - name: Run tests
-      run: |
-        pytest tests/ -v --cov=pettracer --cov-report=xml --cov-report=term || echo "Tests not yet implemented"
-      continue-on-error: true
-    
-    - name: Verify package can be imported
+    - name: Verify package imports
       run: |
         python -c "from pettracer import PetTracerClient; print('✓ Package imports successfully')"
+    
+    - name: Run test suite
+      run: |
+        pytest tests/ -v --cov=pettracer --cov-report=xml --cov-report=term
     
     - name: Verify async functionality
       run: |
@@ -49,12 +47,14 @@ jobs:
         import asyncio
         import inspect
         from pettracer import PetTracerClient
-        from pettracer.client import get_ccs_status, login
+        from pettracer.client import get_ccs_status, login, get_user_profile
         
         # Verify async functions
         assert inspect.iscoroutinefunction(get_ccs_status), 'get_ccs_status should be async'
         assert inspect.iscoroutinefunction(login), 'login should be async'
+        assert inspect.iscoroutinefunction(get_user_profile), 'get_user_profile should be async'
         assert inspect.iscoroutinefunction(PetTracerClient.login), 'PetTracerClient.login should be async'
+        assert inspect.iscoroutinefunction(PetTracerClient.get_all_devices), 'PetTracerClient.get_all_devices should be async'
         
         # Verify context manager
         async def test():
@@ -64,3 +64,11 @@ jobs:
         asyncio.run(test())
         print('✓ All async checks passed')
         "
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v4
+      if: matrix.python-version == '3.12'
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+      continue-on-error: true

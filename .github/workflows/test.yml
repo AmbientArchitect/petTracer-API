@@ -43,6 +43,24 @@ jobs:
       run: |
         python -c "from pettracer import PetTracerClient; print('✓ Package imports successfully')"
     
-    - name: Run async verification
+    - name: Verify async functionality
       run: |
-        python verify_async.py
+        python -c "
+        import asyncio
+        import inspect
+        from pettracer import PetTracerClient
+        from pettracer.client import get_ccs_status, login
+        
+        # Verify async functions
+        assert inspect.iscoroutinefunction(get_ccs_status), 'get_ccs_status should be async'
+        assert inspect.iscoroutinefunction(login), 'login should be async'
+        assert inspect.iscoroutinefunction(PetTracerClient.login), 'PetTracerClient.login should be async'
+        
+        # Verify context manager
+        async def test():
+            async with PetTracerClient() as client:
+                assert client is not None
+        
+        asyncio.run(test())
+        print('✓ All async checks passed')
+        "

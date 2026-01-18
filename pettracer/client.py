@@ -2,14 +2,17 @@
     You need to own a collar, have a valid subscription, and an account.
     www.pettracer.com provides the web interface and mobile apps.
 """
-from typing import Any, List, Optional
+from typing import Any, List, Optional, TYPE_CHECKING
 from datetime import datetime
 import os
 
-import requests
+import aiohttp
 import json
 
 from .types import Device, LastPos
+
+if TYPE_CHECKING:
+    from .types import LoginInfo, SubscriptionInfo, UserProfile
 
 
 GETCCS_URL = "https://portal.pettracer.com/api/map/getccs"
@@ -48,11 +51,11 @@ def _login_headers() -> dict:
     return headers
 
 
-def get_ccs_status(session: Optional[requests.Session] = None, token: str = None, timeout: int = 10) -> List[Device]:
+async def get_ccs_status(session: Optional[aiohttp.ClientSession] = None, token: str = None, timeout: int = 10) -> List[Device]:
     """Fetch the CCS status list from PetTracer and return parsed Device objects.
 
     Args:
-        session: Optional requests.Session to use
+        session: Optional aiohttp.ClientSession to use
         token: Optional bearer token (or set PETTRACER_TOKEN env var)
         timeout: Request timeout in seconds
 
@@ -62,19 +65,22 @@ def get_ccs_status(session: Optional[requests.Session] = None, token: str = None
     Raises:
         PetTracerError: for network or parsing issues
     """
-    sess = session or requests.Session()
     headers = _request_headers(token)
+    close_session = session is None
+    sess = session or aiohttp.ClientSession()
 
     try:
-        resp = sess.get(GETCCS_URL, timeout=timeout, headers=headers)
-        resp.raise_for_status()
-    except Exception as exc:
+        async with sess.get(GETCCS_URL, timeout=aiohttp.ClientTimeout(total=timeout), headers=headers) as resp:
+            resp.raise_for_status()
+            try:
+                data = await resp.json()
+            except ValueError as exc:
+                raise PetTracerError("Invalid JSON response") from exc
+    except aiohttp.ClientError as exc:
         raise PetTracerError(f"HTTP error while fetching CCS status: {exc}") from exc
-
-    try:
-        data = resp.json()
-    except ValueError as exc:
-        raise PetTracerError("Invalid JSON response") from exc
+    finally:
+        if close_session:
+            await sess.close()
 
     if not isinstance(data, list):
         raise PetTracerError("Unexpected JSON structure: expected a list")
@@ -89,7 +95,7 @@ def get_ccs_status(session: Optional[requests.Session] = None, token: str = None
     return devices
 
 
-def get_ccinfo(payload: Any, session: Optional[requests.Session] = None, token: Optional[str] = None, timeout: int = 10) -> Any:
+async def get_ccinfo(payload: Any, session: Optional[aiohttp.ClientSession] = None, token: Optional[str] = None, timeout: int = 10) -> Any:
     """Call the `getccinfo` endpoint with the device id payload.
 
     The `getccinfo` endpoint expects a JSON body of the form `{"devId": <int>}`.
@@ -99,7 +105,7 @@ def get_ccinfo(payload: Any, session: Optional[requests.Session] = None, token: 
 
     Args:
         payload: device id (int) or payload dict containing `devId` or `id`
-        session: Optional requests.Session to use
+        session: Optional aiohttp.ClientSession to use
         token: Optional bearer token (or set PETTRACER_TOKEN env var)
         timeout: Request timeout in seconds
 
@@ -122,19 +128,22 @@ def get_ccinfo(payload: Any, session: Optional[requests.Session] = None, token: 
     else:
         raise PetTracerError("get_ccinfo expects payload to be an int or a dict containing 'devId' or 'id'.")
 
-    sess = session or requests.Session()
     headers = _request_headers(token)
+    close_session = session is None
+    sess = session or aiohttp.ClientSession()
 
     try:
-        resp = sess.post(CCINFO_URL, json=body, timeout=timeout, headers=headers)
-        resp.raise_for_status()
-    except Exception as exc:
+        async with sess.post(CCINFO_URL, json=body, timeout=aiohttp.ClientTimeout(total=timeout), headers=headers) as resp:
+            resp.raise_for_status()
+            try:
+                data = await resp.json()
+            except ValueError as exc:
+                raise PetTracerError("Invalid JSON response from getccinfo") from exc
+    except aiohttp.ClientError as exc:
         raise PetTracerError(f"HTTP error while calling getccinfo: {exc}") from exc
-
-    try:
-        data = resp.json()
-    except ValueError as exc:
-        raise PetTracerError("Invalid JSON response from getccinfo") from exc
+    finally:
+        if close_session:
+            await sess.close()
 
     # Normalize and parse response into typed Device objects
     if isinstance(data, dict):
@@ -145,13 +154,13 @@ def get_ccinfo(payload: Any, session: Optional[requests.Session] = None, token: 
     raise PetTracerError("Unexpected JSON structure from getccinfo: expected dict or list")
 
 
-def login(username: str, password: str, session: Optional[requests.Session] = None, token_env: bool = False, timeout: int = 10) -> dict:
+async def login(username: str, password: str, session: Optional[aiohttp.ClientSession] = None, token_env: bool = False, timeout: int = 10) -> dict:
     """Authenticate against the PetTracer site using JSON credentials.
 
     This helper performs a single JSON POST to `LOGIN_URL` with
     {"username":..., "password":...}. The response MUST be JSON and
     contain a token in one of the fields: `access_token`, `token`, or
-    `id_token`. On success returns {"token": <token>, "session": <requests.Session>}.
+    `id_token`. On success returns {"token": <token>, "session": <aiohttp.ClientSession>}.
 
     Raises `PetTracerError` for HTTP errors, non-JSON responses, or when
     no access token is present in the response.
@@ -159,7 +168,8 @@ def login(username: str, password: str, session: Optional[requests.Session] = No
     If `token_env` is True the discovered token is stored in the
     `PETTRACER_TOKEN` environment variable.
     """
-    sess = session or requests.Session()
+    close_session = session is None
+    sess = session or aiohttp.ClientSession()
     # API expects JSON payload with keys `login` and `password` (not `username`).
     payload = {"login": username, "password": password}
     body = json.dumps(payload)
@@ -168,15 +178,17 @@ def login(username: str, password: str, session: Optional[requests.Session] = No
     headers["Content-Length"] = str(len(body.encode("utf-8")))
 
     try:
-        resp = sess.post(LOGIN_URL, json=payload, timeout=timeout, headers=headers)
-        resp.raise_for_status()
-    except Exception as exc:
+        async with sess.post(LOGIN_URL, json=payload, timeout=aiohttp.ClientTimeout(total=timeout), headers=headers) as resp:
+            resp.raise_for_status()
+            try:
+                j = await resp.json()
+            except ValueError:
+                raise PetTracerError("Login response is not JSON; JSON login required")
+    except aiohttp.ClientError as exc:
         raise PetTracerError(f"HTTP error during login: {exc}") from exc
-
-    try:
-        j = resp.json()
-    except ValueError:
-        raise PetTracerError("Login response is not JSON; JSON login required")
+    finally:
+        if close_session:
+            await sess.close()
 
     token = j.get("access_token") or j.get("token") or j.get("id_token")
     if not token:
@@ -188,7 +200,7 @@ def login(username: str, password: str, session: Optional[requests.Session] = No
     return {"token": token, "session": sess, "data": j}
 
 
-def get_ccpositions(dev_id: int, filter_time: int, to_time: int, session: Optional[requests.Session] = None, token: Optional[str] = None, timeout: int = 10) -> List[LastPos]:
+async def get_ccpositions(dev_id: int, filter_time: int, to_time: int, session: Optional[aiohttp.ClientSession] = None, token: Optional[str] = None, timeout: int = 10) -> List[LastPos]:
     """Fetch device positions for a given time range.
 
     The `getccpositions` endpoint returns device positions with a time range filter.
@@ -197,7 +209,7 @@ def get_ccpositions(dev_id: int, filter_time: int, to_time: int, session: Option
         dev_id: Device ID to fetch positions for
         filter_time: Start time in milliseconds (Unix timestamp * 1000)
         to_time: End time in milliseconds (Unix timestamp * 1000)
-        session: Optional requests.Session to use
+        session: Optional aiohttp.ClientSession to use
         token: Optional bearer token (or set PETTRACER_TOKEN env var)
         timeout: Request timeout in seconds
 
@@ -208,19 +220,22 @@ def get_ccpositions(dev_id: int, filter_time: int, to_time: int, session: Option
         PetTracerError: for network, validation, or parsing issues
     """
     body = {"devId": dev_id, "filterTime": filter_time, "toTime": to_time}
-    sess = session or requests.Session()
     headers = _request_headers(token)
+    close_session = session is None
+    sess = session or aiohttp.ClientSession()
 
     try:
-        resp = sess.post(CCPOSITIONS_URL, json=body, timeout=timeout, headers=headers)
-        resp.raise_for_status()
-    except Exception as exc:
+        async with sess.post(CCPOSITIONS_URL, json=body, timeout=aiohttp.ClientTimeout(total=timeout), headers=headers) as resp:
+            resp.raise_for_status()
+            try:
+                data = await resp.json()
+            except ValueError as exc:
+                raise PetTracerError("Invalid JSON response from getccpositions") from exc
+    except aiohttp.ClientError as exc:
         raise PetTracerError(f"HTTP error while calling getccpositions: {exc}") from exc
-
-    try:
-        data = resp.json()
-    except ValueError as exc:
-        raise PetTracerError("Invalid JSON response from getccpositions") from exc
+    finally:
+        if close_session:
+            await sess.close()
 
     if not isinstance(data, list):
         raise PetTracerError("Unexpected JSON structure from getccpositions: expected a list")
@@ -235,21 +250,24 @@ def get_ccpositions(dev_id: int, filter_time: int, to_time: int, session: Option
     return positions
 
 
-def get_user_profile(session: Optional[requests.Session] = None, token: Optional[str] = None, timeout: int = 10) -> 'UserProfile':
+async def get_user_profile(session: Optional[aiohttp.ClientSession] = None, token: Optional[str] = None, timeout: int = 10) -> 'UserProfile':
     """Fetch the account profile for the current token and return a typed UserProfile."""
-    sess = session or requests.Session()
     headers = _request_headers(token)
+    close_session = session is None
+    sess = session or aiohttp.ClientSession()
 
     try:
-        resp = sess.get(USER_PROFILE_URL, timeout=timeout, headers=headers)
-        resp.raise_for_status()
-    except Exception as exc:
+        async with sess.get(USER_PROFILE_URL, timeout=aiohttp.ClientTimeout(total=timeout), headers=headers) as resp:
+            resp.raise_for_status()
+            try:
+                data = await resp.json()
+            except ValueError as exc:
+                raise PetTracerError("Invalid JSON response from user profile") from exc
+    except aiohttp.ClientError as exc:
         raise PetTracerError(f"HTTP error while fetching user profile: {exc}") from exc
-
-    try:
-        data = resp.json()
-    except ValueError as exc:
-        raise PetTracerError("Invalid JSON response from user profile") from exc
+    finally:
+        if close_session:
+            await sess.close()
 
     # expect a dict
     if not isinstance(data, dict):
@@ -267,27 +285,33 @@ class PetTracerClient:
     
     Example:
         >>> client = PetTracerClient()
-        >>> client.login("username", "password")
+        >>> await client.login("username", "password")
         >>> print(client.user_name)
         >>> print(client.subscription_expires)
-        >>> devices = client.get_all_devices()
+        >>> devices = await client.get_all_devices()
         >>> device = client.get_device(14758)
-        >>> positions = device.get_positions(1767152926491, 1767174526491)
+        >>> positions = await device.get_positions(1767152926491, 1767174526491)
     """
     
-    def __init__(self, username: Optional[str] = None, password: Optional[str] = None):
-        """Initialize PetTracer client, optionally with auto-login.
+    def __init__(self, session: Optional[aiohttp.ClientSession] = None):
+        """Initialize PetTracer client.
         
         Args:
-            username: Optional username for automatic login
-            password: Optional password for automatic login
+            session: Optional aiohttp.ClientSession to reuse (e.g., from Home Assistant)
         """
         self._token: Optional[str] = None
-        self._session: Optional[requests.Session] = None
+        self._session: Optional[aiohttp.ClientSession] = session
         self._login_info: Optional['LoginInfo'] = None
-        
-        if username and password:
-            self.login(username, password)
+        self._owns_session: bool = False
+    
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit - closes session if owned."""
+        await self.close()
+        return False
     
     @property
     def token(self) -> Optional[str]:
@@ -295,8 +319,8 @@ class PetTracerClient:
         return self._token
     
     @property
-    def session(self) -> Optional[requests.Session]:
-        """Get the current requests session."""
+    def session(self) -> Optional[aiohttp.ClientSession]:
+        """Get the current aiohttp session."""
         return self._session
     
     @property
@@ -377,7 +401,7 @@ class PetTracerClient:
             return self._login_info.abo.id
         return None
     
-    def login(self, username: str, password: str, timeout: int = 10) -> None:
+    async def login(self, username: str, password: str, timeout: int = 10) -> None:
         """Authenticate with PetTracer API and store credentials.
         
         Args:
@@ -388,15 +412,29 @@ class PetTracerClient:
         Raises:
             PetTracerError: If login fails
         """
-        result = login(username, password, timeout=timeout)
+        # If we don't have a session, create one that we'll own
+        if self._session is None:
+            self._session = aiohttp.ClientSession()
+            self._owns_session = True
+        
+        result = await login(username, password, session=self._session, timeout=timeout)
         self._token = result["token"]
-        self._session = result["session"]
         
         # Parse and store login info
         from .types import LoginInfo
         self._login_info = LoginInfo.from_dict(result["data"])
     
-    def get_all_devices(self, timeout: int = 10) -> List[Device]:
+    async def close(self) -> None:
+        """Close the aiohttp session if owned by this client.
+        
+        Call this when done with the client to properly clean up resources.
+        Only closes the session if it was created by this client (not passed in).
+        """
+        if self._owns_session and self._session:
+            await self._session.close()
+            self._session = None
+    
+    async def get_all_devices(self, timeout: int = 10) -> List[Device]:
         """Fetch all devices for the authenticated user.
         
         Args:
@@ -411,7 +449,7 @@ class PetTracerClient:
         if not self.is_authenticated:
             raise PetTracerError("Not authenticated. Call login() first.")
         
-        return get_ccs_status(
+        return await get_ccs_status(
             session=self._session,
             token=self._token,
             timeout=timeout
@@ -434,7 +472,7 @@ class PetTracerClient:
         
         return PetTracerDevice(device_id, self)
     
-    def get_user_profile(self, timeout: int = 10):
+    async def get_user_profile(self, timeout: int = 10):
         """Fetch the user profile information and update stored login data.
         
         Args:
@@ -449,7 +487,7 @@ class PetTracerClient:
         if not self.is_authenticated:
             raise PetTracerError("Not authenticated. Call login() first.")
         
-        profile = get_user_profile(
+        profile = await get_user_profile(
             session=self._session,
             token=self._token,
             timeout=timeout
@@ -474,10 +512,10 @@ class PetTracerDevice:
     
     Example:
         >>> client = PetTracerClient()
-        >>> client.login("username", "password")
+        >>> await client.login("username", "password")
         >>> device = client.get_device(14758)
-        >>> info = device.get_info()
-        >>> positions = device.get_positions(1767152926491, 1767174526491)
+        >>> info = await device.get_info()
+        >>> positions = await device.get_positions(1767152926491, 1767174526491)
     """
     
     def __init__(self, device_id: int, client: PetTracerClient):
@@ -495,7 +533,7 @@ class PetTracerDevice:
         """Get the device ID."""
         return self._device_id
     
-    def get_info(self, timeout: int = 10):
+    async def get_info(self, timeout: int = 10):
         """Fetch detailed information for this device.
         
         Args:
@@ -507,14 +545,14 @@ class PetTracerDevice:
         Raises:
             PetTracerError: If request fails
         """
-        return get_ccinfo(
+        return await get_ccinfo(
             payload=self._device_id,
             session=self._client.session,
             token=self._client.token,
             timeout=timeout
         )
     
-    def get_positions(
+    async def get_positions(
         self,
         filter_time: int,
         to_time: int,
@@ -533,7 +571,7 @@ class PetTracerDevice:
         Raises:
             PetTracerError: If request fails
         """
-        return get_ccpositions(
+        return await get_ccpositions(
             dev_id=self._device_id,
             filter_time=filter_time,
             to_time=to_time,

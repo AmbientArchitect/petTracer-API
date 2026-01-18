@@ -1,2 +1,2 @@
 pytest>=7.0
-requests>=2.31
+aiohttp>=3.9.0

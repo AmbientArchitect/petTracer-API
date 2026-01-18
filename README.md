@@ -5,12 +5,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Status](https://img.shields.io/pypi/status/pettracer-client.svg)](https://pypi.org/project/pettracer-client/)
 
-Python client library for the [PetTracer](https://www.pettracer.com) GPS pet collar portal. Provides a clean, object-oriented interface for managing devices, tracking positions, and accessing user information.
+Async Python client library for the [PetTracer](https://www.pettracer.com) GPS pet collar portal. Provides a clean, object-oriented interface for managing devices, tracking positions, and accessing user information.
 
 **Note:** This is an unofficial API derived from the petTracer web site. Use with caution and respect for their service. You need to own a pet collar, have an account and paid subscription for this client to be useful.
 
 ## Features
 
+- ⚡ **Async/await support** - Non-blocking I/O 
 - 🎯 **Object-oriented design** - Clean class hierarchy for intuitive API usage
 - 🔐 **Automatic authentication** - Login once, use everywhere
 - 📍 **Position tracking** - Fetch device locations with time-range filtering
@@ -30,7 +31,7 @@ pip install pettracer-client
 Or install the required dependencies for development:
 
 ```bash
-pip install requests
+pip install aiohttp
 ```
 
 For development:
@@ -42,31 +43,59 @@ pip install -r requirements-dev.txt
 ## Quick Start
 
 ```python
+import asyncio
 from pettracer import PetTracerClient
 
-# Create client and authenticate
-client = PetTracerClient()
-client.login("your_username", "your_password")
+async def main():
+    # Create client and authenticate
+    async with PetTracerClient() as client:
+        await client.login("your_username", "your_password")
+        
+        # Access user information (cached from login)
+        print(f"Welcome, {client.user_name}!")
+        print(f"You have {client.device_count} device(s)")
+        print(f"Subscription expires: {client.subscription_expires}")
+        
+        # Get all devices
+        devices = await client.get_all_devices()
+        for device in devices:
+            print(f"{device.details.name}: Battery {device.bat}mV")
+        
+        # Work with a specific device
+        pet_device = client.get_device(devices[0].id)
+        positions = await pet_device.get_positions(
+            filter_time=1767152926491,  # Unix timestamp in milliseconds
+            to_time=1767174526491
+        )
 
-# Access user information (cached from login)
-print(f"Welcome, {client.user_name}!")
-print(f"You have {client.device_count} device(s)")
-print(f"Subscription expires: {client.subscription_expires}")
-
-# Get all devices
-devices = client.get_all_devices()
-for device in devices:
-    print(f"{device.details.name}: Battery {device.bat}mV")
-
-# Work with a specific device
-pet_device = client.get_device(devices[0].id)
-positions = pet_device.get_positions(
-    filter_time=1767152926491,  # Unix timestamp in milliseconds
-    to_time=1767174526491
-)
+asyncio.run(main())
 ```
 
-For a complete working example, see [examples/class_based_example.py](examples/class_based_example.py).
+For complete examples, see:
+- [examples/class_based_example.py](examples/class_based_example.py) - Full async usage
+- [examples/home_assistant_example.py](examples/home_assistant_example.py) - Home Assistant integration pattern
+
+## Home Assistant Integration
+
+The client is designed to work seamlessly with Home Assistant:
+
+```python
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from pettracer import PetTracerClient
+
+async def async_setup_entry(hass, entry):
+    # Pass in Home Assistant's aiohttp session
+    session = async_get_clientsession(hass)
+    client = PetTracerClient(session=session)
+    
+    await client.login(
+        entry.data["username"],
+        entry.data["password"]
+    )
+    
+    # Use the client...
+    # Note: Don't call client.close() - HA manages the session
+```
 
 ## Architecture
 
@@ -92,25 +121,40 @@ The main entry point for all API operations. Manages authentication and provides
 
 **Initialization:**
 ```python
-# Standard login
-client = PetTracerClient()
-client.login(username, password)
+import asyncio
+from pettracer import PetTracerClient
 
-# Auto-login on creation
-client = PetTracerClient(username, password)
+# Option 1: Context manager (recommended)
+async with PetTracerClient() as client:
+    await client.login(username, password)
+    # Use client...
+
+# Option 2: Manual session management
+client = PetTracerClient()
+await client.login(username, password)
+# ... use client ...
+await client.close()  # Clean up
+
+# Option 3: Pass in existing aiohttp session (e.g., from Home Assistant)
+import aiohttp
+async with aiohttp.ClientSession() as session:
+    client = PetTracerClient(session=session)
+    await client.login(username, password)
+    # Don't call close() - you manage the session
 ```
 
-**Core Methods:**
-- `login(username, password)` - Authenticate and store credentials
-- `get_all_devices()` - Retrieve all devices owned by the user
-- `get_device(device_id)` - Get a device-specific client
-- `get_user_profile()` - Fetch detailed user profile (updates cached data)
+**Core Methods (all async):**
+- `await login(username, password)` - Authenticate and store credentials
+- `await get_all_devices()` - Retrieve all devices owned by the user
+- `get_device(device_id)` - Get a device-specific client (not async)
+- `await get_user_profile()` - Fetch detailed user profile (updates cached data)
+- `await close()` - Close the session if owned by this client
 
 **Authentication:**
 - `is_authenticated` - Check if logged in
 - `token` - Current bearer token
 - `token_expires` - Token expiration datetime
-- `session` - Requests session object
+- `session` - aiohttp ClientSession object
 
 **User Information (available after login):**
 - `user_id`, `user_name`, `email`
@@ -130,9 +174,9 @@ client = PetTracerClient(username, password)
 
 Represents a single pet tracker device. Created via `client.get_device(device_id)`.
 
-**Methods:**
-- `get_info()` - Fetch current device information
-- `get_positions(filter_time, to_time)` - Get position history within time range
+**Methods (all async):**
+- `await get_info()` - Fetch current device information
+- `await get_positions(filter_time, to_time)` - Get position history within time range
 
 **Properties:**
 - `device_id` - The device identifier
@@ -145,7 +189,7 @@ from datetime import datetime, timedelta
 now = datetime.now()
 yesterday = now - timedelta(days=1)
 
-positions = device.get_positions(
+positions = await device.get_positions(
     filter_time=int(yesterday.timestamp() * 1000),
     to_time=int(now.timestamp() * 1000)
 )

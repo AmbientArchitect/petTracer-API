@@ -1,6 +1,8 @@
 """pettracer client package"""
 
-__version__ = "0.1.0"
+""" Version 0.2.0 moved to non-blocking calls and added type hints """
+
+__version__ = "0.2.0"
 
 from .client import (
     get_ccs_status,

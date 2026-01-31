@@ -11,7 +11,7 @@ Async Python client library for the [PetTracer](https://www.pettracer.com) GPS p
 
 ## Features
 
-- ⚡ **Async/await support** - Non-blocking I/O 
+- ⚡ **Async/await support** - Non-blocking I/O (version 0.2.0)
 - 🎯 **Object-oriented design** - Clean class hierarchy for intuitive API usage
 - 🔐 **Automatic authentication** - Login once, use everywhere
 - 📍 **Position tracking** - Fetch device locations with time-range filtering

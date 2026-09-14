@@ -13,6 +13,7 @@ from .types import Device, LastPos
 
 if TYPE_CHECKING:
     from .types import LoginInfo, SubscriptionInfo, UserProfile
+    from .stream import PetTracerStream
 
 
 GETCCS_URL = "https://portal.pettracer.com/api/map/getccs"
@@ -455,6 +456,31 @@ class PetTracerClient:
             timeout=timeout
         )
     
+    def get_stream(self, session: Optional[aiohttp.ClientSession] = None, **kwargs) -> "PetTracerStream":
+        """Create a realtime push-update stream for this account's devices.
+
+        See `pettracer.stream.PetTracerStream` for usage. The stream is not
+        started automatically; call `await stream.start()` after registering
+        any callbacks.
+
+        Args:
+            session: Optional dedicated aiohttp.ClientSession for the socket.
+                If omitted, the stream creates and owns its own session
+                (recommended - see PetTracerStream's docstring on why a
+                long-lived streaming connection shouldn't share a session
+                with short-lived REST calls).
+            **kwargs: Forwarded to PetTracerStream (e.g. reconnect_delay).
+
+        Raises:
+            PetTracerError: If not authenticated.
+        """
+        if not self.is_authenticated:
+            raise PetTracerError("Not authenticated. Call login() first.")
+
+        from .stream import PetTracerStream
+
+        return PetTracerStream(self, session=session, **kwargs)
+
     def get_device(self, device_id: int) -> "PetTracerDevice":
         """Get a device-specific client for the given device ID.
         

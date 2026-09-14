@@ -15,6 +15,7 @@ Async Python client library for the [PetTracer](https://www.pettracer.com) GPS p
 - 🎯 **Object-oriented design** - Clean class hierarchy for intuitive API usage
 - 🔐 **Automatic authentication** - Login once, use everywhere
 - 📍 **Position tracking** - Fetch device locations with time-range filtering
+- 📡 **Realtime streaming** - Push updates over the same STOMP/SockJS channel the web portal uses, instead of polling
 - 👤 **User management** - Access profile and subscription information
 - 🐾 **Device management** - Control and monitor multiple pet collars
 - 📊 **Typed data models** - Full dataclass support for all responses
@@ -72,8 +73,34 @@ asyncio.run(main())
 ```
 
 For complete examples, see:
-- [examples/class_based_example.py](examples/class_based_example.py) - Full async usage
-- [examples/home_assistant_example.py](examples/home_assistant_example.py) - Home Assistant integration pattern
+- [examples/class_based_example.py](examples/class_based_example.py) - Full async usage (REST only)
+- [examples/stream_example.py](examples/stream_example.py) - Command-line tool for exercising the realtime stream
+
+## Realtime Streaming
+
+Instead of polling `get_all_devices()`, you can subscribe to push updates
+over the same channel the web portal uses:
+
+```python
+async with PetTracerClient() as client:
+    await client.login(username, password)
+
+    stream = client.get_stream()
+
+    @stream.on_update
+    def handle_update(device):
+        print(f"{device.id}: battery={device.bat}mV, pos={device.lastPos}")
+
+    await stream.start()   # or start(device_ids=[...]) for specific devices
+    ...
+    await stream.stop()
+```
+
+Test it against your own account from the command line with
+`python examples/stream_example.py` (add `--debug` for verbose frame
+logging). See [STREAMING.md](STREAMING.md) for how the protocol works,
+how the merge/reconnect/callback model is implemented, and how to wire it
+into a Home Assistant `DataUpdateCoordinator`.
 
 ## Home Assistant Integration
 
@@ -96,6 +123,11 @@ async def async_setup_entry(hass, entry):
     # Use the client...
     # Note: Don't call client.close() - HA manages the session
 ```
+
+For the realtime stream specifically, use a **dedicated** session instead of
+HA's shared one, so it can be torn down cleanly on unload/reload - see
+[STREAMING.md](STREAMING.md#session-ownership-important-for-home-assistant)
+for the full pattern with `DataUpdateCoordinator`.
 
 ## Architecture
 
@@ -148,6 +180,7 @@ async with aiohttp.ClientSession() as session:
 - `await get_all_devices()` - Retrieve all devices owned by the user
 - `get_device(device_id)` - Get a device-specific client (not async)
 - `await get_user_profile()` - Fetch detailed user profile (updates cached data)
+- `get_stream()` - Get a `PetTracerStream` for realtime push updates (not async - see [STREAMING.md](STREAMING.md))
 - `await close()` - Close the session if owned by this client
 
 **Authentication:**
@@ -345,18 +378,23 @@ The workspace includes:
 pettracer/
 ├── __init__.py           # Package exports
 ├── client.py             # PetTracerClient and PetTracerDevice classes
+├── stream.py             # PetTracerStream - realtime push updates
 └── types.py              # Dataclass definitions
 
 examples/
-└── class_based_example.py  # Complete usage example
+├── class_based_example.py  # Complete REST usage example
+└── stream_example.py       # CLI tool for testing the realtime stream
 
 tests/
-└── test_client.py        # Test suite
+├── test_client.py        # REST client test suite
+└── test_stream.py        # Stream protocol/codec test suite
 
 .vscode/
 ├── settings.json         # VS Code configuration
 └── launch.json          # Debug configurations
 ```
+
+See [STREAMING.md](STREAMING.md) for details on `stream.py`.
 
 ### Contributing
 

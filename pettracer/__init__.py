@@ -15,6 +15,7 @@ from .client import (
     PetTracerError,
 )
 from .types import Device, MasterHs, LastPos, Details, UserProfile, LoginInfo, SubscriptionInfo
+from .stream import PetTracerStream, PetTracerStreamError
 
 __all__ = [
     "get_ccs_status",
@@ -32,4 +33,6 @@ __all__ = [
     "UserProfile",
     "LoginInfo",
     "SubscriptionInfo",
+    "PetTracerStream",
+    "PetTracerStreamError",
 ]

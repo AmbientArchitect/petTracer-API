@@ -22,8 +22,11 @@ class TrackingMode(IntEnum):
     - SLOW: ~900s (15 min)
     - SUPER_SLOW: ~180s poll / much less frequent GPS fixes than SLOW
     - SEARCH: ~21s - a temporary, self-expiring high-frequency mode meant
-      for actively locating the cat (see `PetTracerDevice.start_search_mode()`
-      and `Device.search` / `Device.searchModeDuration`), not for everyday use.
+      for actively locating the cat (see `PetTracerDevice.start_search_mode()`),
+      not for everyday use. `Device.mode == SEARCH` is the reliable signal
+      that it's active (it's what the portal itself keys off). `Device.search`
+      is only a transient "request pending" flag - it clears again once real
+      fast fixes start arriving, well before search mode itself ends.
     """
 
     FAST = 1

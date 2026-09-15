@@ -758,9 +758,15 @@ class PetTracerDevice:
 
         This is what the portal's own "search mode" flow uses, distinct from
         the everyday `TrackingMode.FAST/NORMAL/SLOW/SUPER_SLOW` choices -
-        it's meant to be used for a short period, not left on. Watch
-        `Device.search` (True once the collar acknowledges) and
-        `Device.searchModeDuration` (remaining time) to know when it ends.
+        it's meant to be used for a short period, not left on. To know
+        whether search mode is actually active, watch
+        `Device.mode == TrackingMode.SEARCH` - that's what the portal itself
+        uses. `Device.search` is *not* an "is active" flag: it goes True as
+        soon as the request is sent, then flips back to False again as soon
+        as the collar starts delivering real fast GPS fixes, even though
+        search mode (and `Device.mode == 11`) is still very much running.
+        `Device.searchModeDuration` has also been observed to freeze rather
+        than count down once fixes start flowing, so don't rely on it either.
 
         Raises:
             PetTracerError: If request fails

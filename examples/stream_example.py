@@ -79,6 +79,7 @@ async def main():
         def _on_update(device):
             name = device.details.name if device.details else device.id
             pos = device.lastPos
+            # print(vars(device))
             if pos:
                 print(
                     f"[update] {name} (id={device.id}): "

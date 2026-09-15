@@ -1,5 +1,9 @@
 """ PetTracer client for interacting with a petTracer collar.
-    You need to own a collar, have a valid subscription, and an account.
+
+    This is an unofficial API for the petTracer service. You must own a
+    collar and have an active subscription. Please treat the PetTracer
+    service with respect.
+
     www.pettracer.com provides the web interface and mobile apps.
 """
 from typing import Any, List, Optional, TYPE_CHECKING
@@ -9,7 +13,7 @@ import os
 import aiohttp
 import json
 
-from .types import Device, LastPos
+from .types import Device, LastPos, TrackingMode
 
 if TYPE_CHECKING:
     from .types import LoginInfo, SubscriptionInfo, UserProfile
@@ -21,6 +25,9 @@ CCINFO_URL = "https://portal.pettracer.com/api/map/getccinfo"
 CCPOSITIONS_URL = "https://portal.pettracer.com/api/map/getccpositions"
 LOGIN_URL = "https://portal.pettracer.com/api/user/login"
 USER_PROFILE_URL = "https://portal.pettracer.com/api/user/profile"
+SETCCMODE_URL = "https://portal.pettracer.com/api/map/setccmode"
+SETCCLED_URL = "https://portal.pettracer.com/api/map/setccled"
+SETCCBUZ_URL = "https://portal.pettracer.com/api/map/setccbuz"
 
 
 class PetTracerError(Exception):
@@ -276,6 +283,121 @@ async def get_user_profile(session: Optional[aiohttp.ClientSession] = None, toke
 
     from .types import UserProfile
     return UserProfile.from_dict(data)
+
+
+async def set_cc_mode(
+    dev_id: int,
+    mode: int,
+    session: Optional[aiohttp.ClientSession] = None,
+    token: Optional[str] = None,
+    timeout: int = 10,
+) -> None:
+    """Change a device's tracking mode (speed vs. battery life tradeoff).
+
+    Calls the `setccmode` endpoint, the same one the portal uses both for
+    the main tracking-speed selector and for activating Search mode
+    (`TrackingMode.SEARCH`). The device acknowledges the change
+    asynchronously - `Device.modeSet` reflects the requested mode until
+    `Device.mode` catches up once the collar confirms it (visible via a
+    follow-up `get_all_devices()`/`get_ccinfo()` call or the realtime stream).
+
+    Args:
+        dev_id: Device ID to change.
+        mode: A `TrackingMode` value (or the raw integer `cmdNr`).
+        session: Optional aiohttp.ClientSession to use.
+        token: Optional bearer token (or set PETTRACER_TOKEN env var).
+        timeout: Request timeout in seconds.
+
+    Raises:
+        PetTracerError: for network or HTTP errors.
+    """
+    body = {"devType": 0, "devId": dev_id, "cmdNr": int(mode)}
+    headers = _request_headers(token)
+    close_session = session is None
+    sess = session or aiohttp.ClientSession()
+
+    try:
+        async with sess.post(SETCCMODE_URL, json=body, timeout=aiohttp.ClientTimeout(total=timeout), headers=headers) as resp:
+            resp.raise_for_status()
+    except aiohttp.ClientError as exc:
+        raise PetTracerError(f"HTTP error while calling setccmode: {exc}") from exc
+    finally:
+        if close_session:
+            await sess.close()
+
+
+async def set_cc_led(
+    dev_id: int,
+    on: bool,
+    session: Optional[aiohttp.ClientSession] = None,
+    token: Optional[str] = None,
+    timeout: int = 10,
+) -> None:
+    """Turn a device's LED on or off.
+
+    Args:
+        dev_id: Device ID to change.
+        on: True to turn the LED on, False to turn it off.
+        session: Optional aiohttp.ClientSession to use.
+        token: Optional bearer token (or set PETTRACER_TOKEN env var).
+        timeout: Request timeout in seconds.
+
+    Raises:
+        PetTracerError: for network or HTTP errors.
+    """
+    url = f"{SETCCLED_URL}/{dev_id}/{int(bool(on))}"
+    headers = _request_headers(token)
+    close_session = session is None
+    sess = session or aiohttp.ClientSession()
+
+    try:
+        async with sess.post(url, timeout=aiohttp.ClientTimeout(total=timeout), headers=headers) as resp:
+            resp.raise_for_status()
+    except aiohttp.ClientError as exc:
+        raise PetTracerError(f"HTTP error while calling setccled: {exc}") from exc
+    finally:
+        if close_session:
+            await sess.close()
+
+
+async def set_cc_buz(
+    dev_id: int,
+    on: bool,
+    session: Optional[aiohttp.ClientSession] = None,
+    token: Optional[str] = None,
+    timeout: int = 10,
+) -> None:
+    """Turn a device's buzzer on or off.
+
+    Not every collar generation has a physical buzzer. The endpoint doesn't
+    appear to validate this: a call against a buzzer-less collar was
+    confirmed to return success with no physical effect, rather than an
+    error - so a successful call here doesn't guarantee the collar actually
+    made a sound.
+
+    Args:
+        dev_id: Device ID to change.
+        on: True to turn the buzzer on, False to turn it off.
+        session: Optional aiohttp.ClientSession to use.
+        token: Optional bearer token (or set PETTRACER_TOKEN env var).
+        timeout: Request timeout in seconds.
+
+    Raises:
+        PetTracerError: for network or HTTP errors.
+    """
+    url = f"{SETCCBUZ_URL}/{dev_id}/{int(bool(on))}"
+    headers = _request_headers(token)
+    close_session = session is None
+    sess = session or aiohttp.ClientSession()
+
+    try:
+        async with sess.post(url, timeout=aiohttp.ClientTimeout(total=timeout), headers=headers) as resp:
+            resp.raise_for_status()
+    except aiohttp.ClientError as exc:
+        raise PetTracerError(f"HTTP error while calling setccbuz: {exc}") from exc
+    finally:
+        if close_session:
+            await sess.close()
 
 
 class PetTracerClient:
@@ -604,4 +726,83 @@ class PetTracerDevice:
             session=self._client.session,
             token=self._client.token,
             timeout=timeout
+        )
+
+    async def set_tracking_mode(self, mode: TrackingMode, timeout: int = 10) -> None:
+        """Change this device's tracking mode (update frequency vs. battery life).
+
+        The change is asynchronous: `Device.modeSet` reflects the requested
+        mode until the collar acknowledges it and `Device.mode` catches up
+        (visible via a follow-up `get_info()` call or the realtime stream).
+
+        Args:
+            mode: One of the `TrackingMode` values. Use `start_search_mode()`
+                instead of `TrackingMode.SEARCH` directly for the "find my
+                cat" flow - it's the same call, just named for that purpose.
+            timeout: Request timeout in seconds
+
+        Raises:
+            PetTracerError: If request fails
+        """
+        await set_cc_mode(
+            dev_id=self._device_id,
+            mode=mode,
+            session=self._client.session,
+            token=self._client.token,
+            timeout=timeout,
+        )
+
+    async def start_search_mode(self, timeout: int = 10) -> None:
+        """Activate Search mode: a temporary, self-expiring high-frequency
+        update mode (~21s) intended for actively locating the cat.
+
+        This is what the portal's own "search mode" flow uses, distinct from
+        the everyday `TrackingMode.FAST/NORMAL/SLOW/SUPER_SLOW` choices -
+        it's meant to be used for a short period, not left on. Watch
+        `Device.search` (True once the collar acknowledges) and
+        `Device.searchModeDuration` (remaining time) to know when it ends.
+
+        Raises:
+            PetTracerError: If request fails
+        """
+        await self.set_tracking_mode(TrackingMode.SEARCH, timeout=timeout)
+
+    async def set_led(self, on: bool, timeout: int = 10) -> None:
+        """Turn this device's LED on or off.
+
+        Args:
+            on: True to turn the LED on, False to turn it off.
+            timeout: Request timeout in seconds
+
+        Raises:
+            PetTracerError: If request fails
+        """
+        await set_cc_led(
+            dev_id=self._device_id,
+            on=on,
+            session=self._client.session,
+            token=self._client.token,
+            timeout=timeout,
+        )
+
+    async def set_buzzer(self, on: bool, timeout: int = 10) -> None:
+        """Turn this device's buzzer on or off.
+
+        Not every collar generation has a physical buzzer - calling this on
+        one that doesn't succeeds with no physical effect rather than
+        raising, so success alone doesn't confirm the collar made a sound.
+
+        Args:
+            on: True to turn the buzzer on, False to turn it off.
+            timeout: Request timeout in seconds
+
+        Raises:
+            PetTracerError: If request fails
+        """
+        await set_cc_buz(
+            dev_id=self._device_id,
+            on=on,
+            session=self._client.session,
+            token=self._client.token,
+            timeout=timeout,
         )

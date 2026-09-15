@@ -7,7 +7,7 @@
 
 Async Python client library for the [PetTracer](https://www.pettracer.com) GPS pet collar portal. Provides a clean, object-oriented interface for managing devices, tracking positions, and accessing user information.
 
-**Note:** This is an unofficial API derived from the petTracer web site. Use with caution and respect for their service. You need to own a pet collar, have an account and paid subscription for this client to be useful.
+**Note:** This is an unofficial API for the petTracer service. You must own a collar and have an active subscription. Please treat the PetTracer service with respect.
 
 ## Features
 
@@ -16,6 +16,7 @@ Async Python client library for the [PetTracer](https://www.pettracer.com) GPS p
 - 🔐 **Automatic authentication** - Login once, use everywhere
 - 📍 **Position tracking** - Fetch device locations with time-range filtering
 - 📡 **Realtime streaming** - Push updates over the same STOMP/SockJS channel the web portal uses, instead of polling
+- 🎛️ **Device control** - Change tracking mode, activate search mode, toggle LED/buzzer
 - 👤 **User management** - Access profile and subscription information
 - 🐾 **Device management** - Control and monitor multiple pet collars
 - 📊 **Typed data models** - Full dataclass support for all responses
@@ -75,6 +76,7 @@ asyncio.run(main())
 For complete examples, see:
 - [examples/class_based_example.py](examples/class_based_example.py) - Full async usage (REST only)
 - [examples/stream_example.py](examples/stream_example.py) - Command-line tool for exercising the realtime stream
+- [examples/control_example.py](examples/control_example.py) - Command-line tool for tracking mode / search mode / LED / buzzer
 
 ## Realtime Streaming
 
@@ -101,6 +103,31 @@ Test it against your own account from the command line with
 logging). See [STREAMING.md](STREAMING.md) for how the protocol works,
 how the merge/reconnect/callback model is implemented, and how to wire it
 into a Home Assistant `DataUpdateCoordinator`.
+
+## Device Control
+
+Change how often a collar reports in, trade battery life for update
+frequency, temporarily boost update frequency to help you find your cat,
+or toggle its LED/buzzer:
+
+```python
+from pettracer import TrackingMode
+
+async with PetTracerClient() as client:
+    await client.login(username, password)
+    device = client.get_device(device_id)
+
+    await device.set_tracking_mode(TrackingMode.SLOW)  # battery-friendly
+    await device.start_search_mode()                    # temporary, ~21s updates
+    await device.set_led(True)
+    await device.set_buzzer(False)
+```
+
+Test it against your own account with `python examples/control_example.py`
+(see `--help`). See [CONTROLS.md](CONTROLS.md) for the full mode table,
+how "Find nearby" actually works (mostly a client-side signal-strength
+gauge, with a real "Search mode" behind the "make it report faster" part),
+and why several collar modes aren't exposed yet.
 
 ## Home Assistant Integration
 
@@ -210,6 +237,9 @@ Represents a single pet tracker device. Created via `client.get_device(device_id
 **Methods (all async):**
 - `await get_info()` - Fetch current device information
 - `await get_positions(filter_time, to_time)` - Get position history within time range
+- `await set_tracking_mode(mode)` - Change tracking mode (see `TrackingMode`, [CONTROLS.md](CONTROLS.md))
+- `await start_search_mode()` - Activate temporary high-frequency Search mode
+- `await set_led(on)` / `await set_buzzer(on)` - Toggle LED/buzzer
 
 **Properties:**
 - `device_id` - The device identifier
@@ -379,14 +409,15 @@ pettracer/
 ├── __init__.py           # Package exports
 ├── client.py             # PetTracerClient and PetTracerDevice classes
 ├── stream.py             # PetTracerStream - realtime push updates
-└── types.py              # Dataclass definitions
+└── types.py              # Dataclass definitions, TrackingMode enum
 
 examples/
 ├── class_based_example.py  # Complete REST usage example
-└── stream_example.py       # CLI tool for testing the realtime stream
+├── stream_example.py       # CLI tool for testing the realtime stream
+└── control_example.py      # CLI tool for tracking mode / search mode / LED / buzzer
 
 tests/
-├── test_client.py        # REST client test suite
+├── test_client.py        # REST client + device control test suite
 └── test_stream.py        # Stream protocol/codec test suite
 
 .vscode/
@@ -394,7 +425,8 @@ tests/
 └── launch.json          # Debug configurations
 ```
 
-See [STREAMING.md](STREAMING.md) for details on `stream.py`.
+See [STREAMING.md](STREAMING.md) for details on `stream.py`, and
+[CONTROLS.md](CONTROLS.md) for the device control (write) endpoints.
 
 ### Contributing
 

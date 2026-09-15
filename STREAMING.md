@@ -1,5 +1,9 @@
 # Realtime Streaming
 
+**This is an unofficial API for the petTracer service. You must own a
+collar and have an active subscription. Please treat the PetTracer service
+with respect.**
+
 `pettracer.stream.PetTracerStream` gives you push updates for collar
 position/status changes instead of polling `get_all_devices()` on a timer.
 This document explains where it comes from, how it works, how to test it,
@@ -38,9 +42,9 @@ That connection is:
   ..., "lastPos": {...}}`. The portal merges this onto its cached device
   list rather than replacing it wholesale.
 
-This was reverse-engineered from the portal's compiled JS, confirmed live
-against `https://upload.pettracer.com/sc/info` (a real SockJS endpoint,
-`{"websocket":true,...}`), and since confirmed end-to-end against a live
+This was documented as part of this unofficial API, confirmed live against
+`https://upload.pettracer.com/sc/info` (a real SockJS endpoint,
+`{"websocket":true,...}`), and confirmed end-to-end against a live
 authenticated account via `examples/stream_example.py` - connect, subscribe,
 and merged push updates all work as implemented.
 

@@ -1,5 +1,9 @@
 """Realtime streaming client for PetTracer collar updates.
 
+This is an unofficial API for the petTracer service. You must own a collar
+and have an active subscription. Please treat the PetTracer service with
+respect.
+
 The petTracer web portal (portal.pettracer.com) does not poll for position
 updates - it opens a persistent connection to a separate host
 (upload.pettracer.com) and receives pushed updates as they happen. That
@@ -7,10 +11,10 @@ connection is a STOMP (https://stomp.github.io) conversation carried inside
 SockJS's websocket envelope framing, authenticated with the same bearer
 token used for the REST endpoints in :mod:`pettracer.client`.
 
-This module re-implements that client so the same push updates can be
+This module implements that same protocol so the same push updates can be
 consumed from Python instead of polling ``get_all_devices()`` on a timer.
 
-Protocol summary (reverse-engineered from the portal's JS bundle):
+Protocol summary:
 
 1. Open a WebSocket to ``wss://upload.pettracer.com/sc/<server>/<session>/websocket?access_token=<token>``.
    This is the SockJS "websocket" transport - both directions wrap a single
@@ -28,11 +32,10 @@ Protocol summary (reverse-engineered from the portal's JS bundle):
    ``Device``. This client merges each patch onto a local cache seeded from
    ``get_all_devices()`` and emits the merged, fully-populated ``Device``.
 
-This was validated against a live, unauthenticated probe of
-``https://upload.pettracer.com/sc/info`` (confirms the SockJS endpoint and
-that the websocket transport is enabled) and against the decompiled client
-logic, but not against a live authenticated session. If the frame format
-has drifted, enable logging for this module to see raw frames.
+This has been confirmed end-to-end against a live authenticated account
+(connect, subscribe, and merged push updates all work as implemented). If
+the frame format ever changes on the service side, enable logging for this
+module to see raw frames.
 """
 from __future__ import annotations
 

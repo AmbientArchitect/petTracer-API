@@ -1,6 +1,36 @@
 from dataclasses import dataclass
 from datetime import datetime
+from enum import IntEnum
 from typing import Any, Dict, List, Optional
+
+
+class TrackingMode(IntEnum):
+    """Collar tracking-speed modes, set via `PetTracerDevice.set_tracking_mode()`.
+
+    These are the `cmdNr` values accepted by the portal's `setccmode`
+    endpoint. Only the modes exposed in the main portal UI plus Search mode
+    are included here - the collar firmware supports several more
+    (Slow+/++, Fast+/+2, Normal+, the PEIL/"Radio" direction-finding modes,
+    a low-battery fallback, an off-until-docked state, and a factory test
+    mode) but those are either automatic, hardware-generation-specific, or
+    have consequences (e.g. requiring the collar to be physically placed in
+    its home station to recover) that don't belong in a simple enum yet.
+
+    Higher poll intervals mean less frequent updates and better battery life:
+    - FAST: ~60s between updates
+    - NORMAL: ~180s (3 min)
+    - SLOW: ~900s (15 min)
+    - SUPER_SLOW: ~180s poll / much less frequent GPS fixes than SLOW
+    - SEARCH: ~21s - a temporary, self-expiring high-frequency mode meant
+      for actively locating the cat (see `PetTracerDevice.start_search_mode()`
+      and `Device.search` / `Device.searchModeDuration`), not for everyday use.
+    """
+
+    FAST = 1
+    NORMAL = 2
+    SLOW = 3
+    SUPER_SLOW = 4
+    SEARCH = 11
 
 
 def _parse_datetime(s: Optional[str]) -> Optional[datetime]:

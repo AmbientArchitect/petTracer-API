@@ -7,8 +7,19 @@ import pytest
 import aiohttp
 from aiohttp import ClientError
 
-from pettracer.client import get_ccs_status, get_ccinfo, get_ccpositions, login, get_user_profile, PetTracerError
-from pettracer.types import Device, LastPos
+from pettracer.client import (
+    get_ccs_status,
+    get_ccinfo,
+    get_ccpositions,
+    login,
+    get_user_profile,
+    set_cc_mode,
+    set_cc_led,
+    set_cc_buz,
+    PetTracerClient,
+    PetTracerError,
+)
+from pettracer.types import Device, LastPos, TrackingMode
 
 
 SAMPLE_JSON = [
@@ -865,3 +876,144 @@ async def test_pettracer_client_login_info_none_before_login():
     assert client.token_expires is None
     assert client.subscription_expires is None
     assert client.login_info is None
+
+
+@pytest.mark.asyncio
+async def test_set_cc_mode_posts_cmdnr():
+    """Test that set_cc_mode posts the expected body to setccmode."""
+    captured = {}
+
+    @asynccontextmanager
+    async def capture_post(url, json, timeout, headers=None):
+        captured['url'] = url
+        captured['json'] = json
+        captured['headers'] = headers
+        yield MockResponse(None)
+
+    with patch('aiohttp.ClientSession') as mock_session_class:
+        mock_session = MagicMock()
+        mock_session.post = capture_post
+        mock_session.close = AsyncMock()
+        mock_session_class.return_value = mock_session
+
+        await set_cc_mode(14758, TrackingMode.SEARCH, token="tok")
+
+        assert captured['url'].endswith('/api/map/setccmode')
+        assert captured['json'] == {"devType": 0, "devId": 14758, "cmdNr": 11}
+        assert captured['headers'].get('Authorization') == "Bearer tok"
+
+
+@pytest.mark.asyncio
+async def test_set_cc_mode_raises_on_http_error():
+    """Test that set_cc_mode wraps HTTP errors."""
+    @asynccontextmanager
+    async def failing_post(url, json, timeout, headers=None):
+        yield MockResponse(None, status=500)
+
+    with patch('aiohttp.ClientSession') as mock_session_class:
+        mock_session = MagicMock()
+        mock_session.post = failing_post
+        mock_session.close = AsyncMock()
+        mock_session_class.return_value = mock_session
+
+        with pytest.raises(PetTracerError):
+            await set_cc_mode(14758, TrackingMode.FAST, token="tok")
+
+
+@pytest.mark.asyncio
+async def test_set_cc_led_posts_to_path_params():
+    """Test that set_cc_led encodes device id and on/off state in the URL path."""
+    captured = {}
+
+    @asynccontextmanager
+    async def capture_post(url, timeout, headers=None):
+        captured['url'] = url
+        yield MockResponse(None)
+
+    with patch('aiohttp.ClientSession') as mock_session_class:
+        mock_session = MagicMock()
+        mock_session.post = capture_post
+        mock_session.close = AsyncMock()
+        mock_session_class.return_value = mock_session
+
+        await set_cc_led(14758, True, token="tok")
+        assert captured['url'] == "https://portal.pettracer.com/api/map/setccled/14758/1"
+
+        await set_cc_led(14758, False, token="tok")
+        assert captured['url'] == "https://portal.pettracer.com/api/map/setccled/14758/0"
+
+
+@pytest.mark.asyncio
+async def test_set_cc_buz_posts_to_path_params():
+    """Test that set_cc_buz encodes device id and on/off state in the URL path."""
+    captured = {}
+
+    @asynccontextmanager
+    async def capture_post(url, timeout, headers=None):
+        captured['url'] = url
+        yield MockResponse(None)
+
+    with patch('aiohttp.ClientSession') as mock_session_class:
+        mock_session = MagicMock()
+        mock_session.post = capture_post
+        mock_session.close = AsyncMock()
+        mock_session_class.return_value = mock_session
+
+        await set_cc_buz(14758, True, token="tok")
+        assert captured['url'] == "https://portal.pettracer.com/api/map/setccbuz/14758/1"
+
+
+@pytest.mark.asyncio
+async def test_pettracer_device_set_tracking_mode_delegates():
+    """Test that PetTracerDevice.set_tracking_mode calls setccmode for its device id."""
+    captured = {}
+
+    @asynccontextmanager
+    async def capture_post(url, json, timeout, headers=None):
+        captured['url'] = url
+        captured['json'] = json
+        yield MockResponse(None)
+
+    with patch('aiohttp.ClientSession') as mock_session_class:
+        mock_session = MagicMock()
+        mock_session.post = capture_post
+        mock_session.close = AsyncMock()
+        mock_session.close = AsyncMock()
+        mock_session_class.return_value = mock_session
+
+        client = PetTracerClient()
+        client._token = "tok"
+        device = client.get_device(14758)
+
+        await device.set_tracking_mode(TrackingMode.SLOW)
+        assert captured['json'] == {"devType": 0, "devId": 14758, "cmdNr": 3}
+
+        await device.start_search_mode()
+        assert captured['json'] == {"devType": 0, "devId": 14758, "cmdNr": 11}
+
+
+@pytest.mark.asyncio
+async def test_pettracer_device_led_and_buzzer_delegate():
+    """Test that PetTracerDevice.set_led/set_buzzer call the right endpoints for its device id."""
+    captured = {}
+
+    @asynccontextmanager
+    async def capture_post(url, timeout, headers=None):
+        captured['url'] = url
+        yield MockResponse(None)
+
+    with patch('aiohttp.ClientSession') as mock_session_class:
+        mock_session = MagicMock()
+        mock_session.post = capture_post
+        mock_session.close = AsyncMock()
+        mock_session_class.return_value = mock_session
+
+        client = PetTracerClient()
+        client._token = "tok"
+        device = client.get_device(14758)
+
+        await device.set_led(True)
+        assert captured['url'] == "https://portal.pettracer.com/api/map/setccled/14758/1"
+
+        await device.set_buzzer(False)
+        assert captured['url'] == "https://portal.pettracer.com/api/map/setccbuz/14758/0"

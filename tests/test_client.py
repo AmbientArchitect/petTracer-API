@@ -988,8 +988,11 @@ async def test_pettracer_device_set_tracking_mode_delegates():
         await device.set_tracking_mode(TrackingMode.SLOW)
         assert captured['json'] == {"devType": 0, "devId": 14758, "cmdNr": 3}
 
-        await device.start_search_mode()
+        await device.start_search_mode(True)
         assert captured['json'] == {"devType": 0, "devId": 14758, "cmdNr": 11}
+
+        await device.start_search_mode(False)
+        assert captured['json'] == {"devType": 0, "devId": 14758, "cmdNr": 1}
 
 
 @pytest.mark.asyncio

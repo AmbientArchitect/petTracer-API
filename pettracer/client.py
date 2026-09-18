@@ -752,7 +752,7 @@ class PetTracerDevice:
             timeout=timeout,
         )
 
-    async def start_search_mode(self, timeout: int = 10) -> None:
+    async def start_search_mode(self, on: bool, timeout: int = 10) -> None:
         """Activate Search mode: a temporary, self-expiring high-frequency
         update mode (~21s) intended for actively locating the cat.
 
@@ -771,7 +771,7 @@ class PetTracerDevice:
         Raises:
             PetTracerError: If request fails
         """
-        await self.set_tracking_mode(TrackingMode.SEARCH, timeout=timeout)
+        await self.set_tracking_mode(TrackingMode.SEARCH if on else TrackingMode.FAST, timeout=timeout)
 
     async def set_led(self, on: bool, timeout: int = 10) -> None:
         """Turn this device's LED on or off.

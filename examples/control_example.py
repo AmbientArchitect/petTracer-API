@@ -18,8 +18,9 @@ Usage:
     # Change tracking mode (fast, normal, slow, super_slow)
     python examples/control_example.py mode <device_id> fast
 
-    # Activate search mode (~21s updates, self-expiring)
-    python examples/control_example.py search <device_id>
+    # Turn search mode on/off (~21s updates, self-expiring)
+    python examples/control_example.py search <device_id> on
+    python examples/control_example.py search <device_id> off
 
     # Toggle the LED / buzzer
     python examples/control_example.py led <device_id> on
@@ -49,8 +50,9 @@ def parse_args():
     mode_p.add_argument("device_id", type=int)
     mode_p.add_argument("mode", choices=sorted(MODE_NAMES))
 
-    search_p = sub.add_parser("search", help="Activate search mode (~21s updates)")
+    search_p = sub.add_parser("search", help="Turn search mode (~21s updates) on or off")
     search_p.add_argument("device_id", type=int)
+    search_p.add_argument("state", choices=["on", "off"])
 
     led_p = sub.add_parser("led", help="Turn the LED on or off")
     led_p.add_argument("device_id", type=int)
@@ -96,8 +98,8 @@ async def main():
             print(f"Setting device {args.device_id} to {mode.name} (cmdNr={int(mode)})...")
             await device.set_tracking_mode(mode)
         elif args.command == "search":
-            print(f"Activating search mode on device {args.device_id}...")
-            await device.start_search_mode()
+            print(f"Turning search mode {args.state} on device {args.device_id}...")
+            await device.start_search_mode(args.state == "on")
         elif args.command == "led":
             print(f"Turning LED {args.state} on device {args.device_id}...")
             await device.set_led(args.state == "on")

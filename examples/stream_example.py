@@ -84,7 +84,8 @@ async def main():
                 print(
                     f"[update] {name} (id={device.id}): "
                     f"lat={pos.posLat}, long={pos.posLong}, sat={pos.sat}, "
-                    f"time={pos.timeMeasure}, battery={device.bat}mV"
+                    f"time={pos.timeMeasure}, battery={device.bat}mV, "
+                    f"Search duration={'Off' if device.searchModeDuration == -1 else device.searchModeDuration}"
                 )
             else:
                 print(f"[update] {name} (id={device.id}): lastContact={device.lastContact}, battery={device.bat}mV")

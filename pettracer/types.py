@@ -171,6 +171,45 @@ class MasterHs:
 
 
 @dataclass
+class HomeStation:
+    """A home station (base station) on the account, from /user/gethomestations."""
+
+    id: Optional[int]
+    posLat: Optional[float]
+    posLong: Optional[float]
+    hw: Optional[int]
+    sw: Optional[int]
+    bl: Optional[int]
+    bat: Optional[int]
+    status: Optional[int]
+    lastContact: Optional[datetime]
+    devMode: Optional[bool]
+    flags: Optional[int]
+    wlanSsid: Optional[str]
+    type: Optional[int]
+    rssi: Optional[int]
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "HomeStation":
+        return cls(
+            id=d.get("id"),
+            posLat=d.get("posLat"),
+            posLong=d.get("posLong"),
+            hw=d.get("hw"),
+            sw=d.get("sw"),
+            bl=d.get("bl"),
+            bat=d.get("bat"),
+            status=d.get("status"),
+            lastContact=_parse_datetime(d.get("lastContact")),
+            devMode=d.get("devMode"),
+            flags=d.get("flags"),
+            wlanSsid=d.get("wlanSsid"),
+            type=d.get("type"),
+            rssi=d.get("rssi"),
+        )
+
+
+@dataclass
 class LastPos:
     id: Optional[int]
     posLat: Optional[float]

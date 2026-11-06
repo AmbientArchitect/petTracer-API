@@ -209,6 +209,7 @@ async with aiohttp.ClientSession() as session:
 - `await get_all_devices()` - Retrieve all devices owned by the user
 - `get_device(device_id)` - Get a device-specific client (not async)
 - `await get_user_profile()` - Fetch detailed user profile (updates cached data)
+- `await get_home_stations()` - List the home stations (base stations) on the account
 - `get_stream()` - Get a `PetTracerStream` for realtime push updates (not async - see [STREAMING.md](STREAMING.md))
 - `await close()` - Close the session if owned by this client
 

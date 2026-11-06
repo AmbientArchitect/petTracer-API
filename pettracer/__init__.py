@@ -10,6 +10,7 @@ from .client import (
     get_ccpositions,
     login,
     get_user_profile,
+    get_home_stations,
     set_cc_mode,
     set_cc_led,
     set_cc_buz,
@@ -17,7 +18,7 @@ from .client import (
     PetTracerDevice,
     PetTracerError,
 )
-from .types import Device, MasterHs, LastPos, Details, UserProfile, LoginInfo, SubscriptionInfo, TrackingMode
+from .types import Device, MasterHs, HomeStation, LastPos, Details, UserProfile, LoginInfo, SubscriptionInfo, TrackingMode
 from .stream import PetTracerStream, PetTracerStreamError
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "get_ccpositions",
     "login",
     "get_user_profile",
+    "get_home_stations",
     "set_cc_mode",
     "set_cc_led",
     "set_cc_buz",
@@ -34,6 +36,7 @@ __all__ = [
     "PetTracerError",
     "Device",
     "MasterHs",
+    "HomeStation",
     "LastPos",
     "Details",
     "UserProfile",

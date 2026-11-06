@@ -8,6 +8,7 @@ import aiohttp
 from aiohttp import ClientError
 
 from pettracer.client import (
+    get_home_stations,
     get_ccs_status,
     get_ccinfo,
     get_ccpositions,
@@ -19,7 +20,7 @@ from pettracer.client import (
     PetTracerClient,
     PetTracerError,
 )
-from pettracer.types import Device, LastPos, TrackingMode
+from pettracer.types import Device, HomeStation, LastPos, TrackingMode
 
 
 SAMPLE_JSON = [
@@ -1020,3 +1021,155 @@ async def test_pettracer_device_led_and_buzzer_delegate():
 
         await device.set_buzzer(False)
         assert captured['url'] == "https://portal.pettracer.com/api/map/setccbuz/14758/0"
+
+
+# Home station tests
+
+HOMESTATIONS_JSON = [
+    {
+        "id": 10775,
+        "posLat": 51.4000701,
+        "posLong": -1.0842267,
+        "hw": 786432,
+        "sw": 917506,
+        "bl": 131585,
+        "bat": 0,
+        "status": 0,
+        "lastContact": "2025-12-27T21:51:40.310+0000",
+        "devMode": False,
+        "flags": 0,
+        "wlanSsid": "HomeWiFi",
+        "type": 1,
+        "rssi": 1,
+    },
+    {
+        "id": 10776,
+        "posLat": 51.4010000,
+        "posLong": -1.0850000,
+        "hw": 786432,
+        "sw": 917506,
+        "bl": 131585,
+        "bat": 0,
+        "status": 0,
+        "lastContact": "2025-12-27T21:51:41.000+0000",
+        "devMode": False,
+        "flags": 0,
+        "wlanSsid": "HomeWiFi",
+        "type": 1,
+        "rssi": 1,
+    },
+]
+
+
+@pytest.mark.asyncio
+async def test_get_home_stations_parses_sample():
+    """Test get_home_stations parses every station with the auth header set."""
+    captured = {}
+
+    @asynccontextmanager
+    async def capture_get(url, timeout, headers=None):
+        captured['url'] = url
+        captured['headers'] = headers
+        yield MockResponse(HOMESTATIONS_JSON)
+
+    session = MagicMock()
+    session.get = capture_get
+
+    stations = await get_home_stations(session=session, token="token-abc")
+
+    assert captured['url'].endswith("/api/user/gethomestations")
+    assert captured['headers']['Authorization'] == "Bearer token-abc"
+    assert [s.id for s in stations] == [10775, 10776]
+    first = stations[0]
+    assert isinstance(first, HomeStation)
+    assert first.wlanSsid == "HomeWiFi"
+    assert first.sw == 917506
+    assert first.lastContact.year == 2025
+    assert first.lastContact.tzinfo is not None
+
+
+@pytest.mark.asyncio
+async def test_get_home_stations_http_error_keeps_cause():
+    """HTTP errors are wrapped in PetTracerError with the aiohttp error as cause."""
+    session = MagicMock()
+    session.get.return_value = MockResponse([], status=403)
+
+    with pytest.raises(PetTracerError) as exc:
+        await get_home_stations(session=session, token="t")
+    assert isinstance(exc.value.__cause__, aiohttp.ClientError)
+
+
+@pytest.mark.asyncio
+async def test_get_home_stations_non_list_raises():
+    """A non-list response raises PetTracerError."""
+    session = MagicMock()
+    session.get.return_value = MockResponse({"error": "nope"})
+
+    with pytest.raises(PetTracerError):
+        await get_home_stations(session=session, token="t")
+
+
+@pytest.mark.asyncio
+async def test_get_home_stations_does_not_close_passed_session():
+    """A caller-supplied session is left open."""
+    session = MagicMock()
+    session.get.return_value = MockResponse(HOMESTATIONS_JSON)
+    session.close = AsyncMock()
+
+    await get_home_stations(session=session, token="t")
+    session.close.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_home_stations_closes_own_session():
+    """A session created by get_home_stations is closed afterwards."""
+    with patch('aiohttp.ClientSession') as mock_session_class:
+        mock_session = MagicMock()
+        mock_session.get.return_value = MockResponse(HOMESTATIONS_JSON)
+        mock_session.close = AsyncMock()
+        mock_session_class.return_value = mock_session
+
+        await get_home_stations(token="t")
+
+    mock_session.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_pettracer_client_get_home_stations_requires_auth():
+    """PetTracerClient.get_home_stations raises if not authenticated."""
+    from pettracer.client import PetTracerClient
+
+    client = PetTracerClient()
+    with pytest.raises(PetTracerError) as exc:
+        await client.get_home_stations()
+    assert "Not authenticated" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_pettracer_client_get_home_stations():
+    """PetTracerClient.get_home_stations uses the client's session and token."""
+    from pettracer.client import PetTracerClient
+
+    @asynccontextmanager
+    async def mock_post(url, json=None, timeout=None, headers=None):
+        yield MockResponse({"access_token": "token-xyz"})
+
+    captured = {}
+
+    @asynccontextmanager
+    async def mock_get(url, timeout, headers=None):
+        captured['headers'] = headers
+        yield MockResponse(HOMESTATIONS_JSON)
+
+    session = MagicMock()
+    session.post = mock_post
+    session.get = mock_get
+    session.close = AsyncMock()
+
+    client = PetTracerClient(session=session)
+    await client.login("user", "pass")
+    stations = await client.get_home_stations()
+
+    assert len(stations) == 2
+    assert captured['headers']['Authorization'] == "Bearer token-xyz"
+    session.close.assert_not_awaited()

@@ -13,7 +13,7 @@ import os
 import aiohttp
 import json
 
-from .types import Device, LastPos, TrackingMode
+from .types import Device, HomeStation, LastPos, TrackingMode
 
 if TYPE_CHECKING:
     from .types import LoginInfo, SubscriptionInfo, UserProfile
@@ -25,6 +25,7 @@ CCINFO_URL = "https://portal.pettracer.com/api/map/getccinfo"
 CCPOSITIONS_URL = "https://portal.pettracer.com/api/map/getccpositions"
 LOGIN_URL = "https://portal.pettracer.com/api/user/login"
 USER_PROFILE_URL = "https://portal.pettracer.com/api/user/profile"
+HOMESTATIONS_URL = "https://portal.pettracer.com/api/user/gethomestations"
 SETCCMODE_URL = "https://portal.pettracer.com/api/map/setccmode"
 SETCCLED_URL = "https://portal.pettracer.com/api/map/setccled"
 SETCCBUZ_URL = "https://portal.pettracer.com/api/map/setccbuz"
@@ -256,6 +257,38 @@ async def get_ccpositions(dev_id: int, filter_time: int, to_time: int, session: 
             raise PetTracerError(f"Failed to parse position item: {exc}") from exc
 
     return positions
+
+
+async def get_home_stations(session: Optional[aiohttp.ClientSession] = None, token: Optional[str] = None, timeout: int = 10) -> List[HomeStation]:
+    """Fetch the home stations (base stations) on the account.
+
+    Raises:
+        PetTracerError: for network or parsing issues
+    """
+    headers = _request_headers(token)
+    close_session = session is None
+    sess = session or aiohttp.ClientSession()
+
+    try:
+        async with sess.get(HOMESTATIONS_URL, timeout=aiohttp.ClientTimeout(total=timeout), headers=headers) as resp:
+            resp.raise_for_status()
+            try:
+                data = await resp.json()
+            except ValueError as exc:
+                raise PetTracerError("Invalid JSON response from gethomestations") from exc
+    except aiohttp.ClientError as exc:
+        raise PetTracerError(f"HTTP error while fetching home stations: {exc}") from exc
+    finally:
+        if close_session:
+            await sess.close()
+
+    if not isinstance(data, list):
+        raise PetTracerError("Unexpected JSON structure from gethomestations: expected a list")
+
+    try:
+        return [HomeStation.from_dict(item) for item in data]
+    except Exception as exc:
+        raise PetTracerError(f"Failed to parse home station item: {exc}") from exc
 
 
 async def get_user_profile(session: Optional[aiohttp.ClientSession] = None, token: Optional[str] = None, timeout: int = 10) -> 'UserProfile':
@@ -620,6 +653,21 @@ class PetTracerClient:
         
         return PetTracerDevice(device_id, self)
     
+    async def get_home_stations(self, timeout: int = 10) -> List[HomeStation]:
+        """Fetch the home stations (base stations) on the account.
+
+        Raises:
+            PetTracerError: If not authenticated or request fails
+        """
+        if not self.is_authenticated:
+            raise PetTracerError("Not authenticated. Call login() first.")
+
+        return await get_home_stations(
+            session=self._session,
+            token=self._token,
+            timeout=timeout
+        )
+
     async def get_user_profile(self, timeout: int = 10):
         """Fetch the user profile information and update stored login data.
         
